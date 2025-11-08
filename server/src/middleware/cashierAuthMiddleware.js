@@ -18,19 +18,19 @@ module.exports = function(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // CRITICAL: We check if this token is a 'cashier' token
-    // If it's a stall owner's token, we reject it.
     if (!decoded.cashier) {
       return res.status(403).json({ error: 'Access denied: Not a Cashier' });
     }
 
-    // We attach the 'cashier' info (which includes the event_id)
-    // to the request object.
+    // We attach the 'cashier' info
     req.cashier = decoded.cashier; 
     
-    next(); // Continue to the 'topup' or 'refund' function
+    next(); 
 
   } catch (err) {
     console.error('Token verification failed:', err.message);
-    res.status(401).json({ error: 'Token is not valid' });
+    // --- THIS IS THE FIX ---
+    // We must RETURN after sending the error to stop execution
+    return res.status(401).json({ error: 'Token is not valid' });
   }
 };

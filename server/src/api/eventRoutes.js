@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 // --- TODO: PASTE YOUR REAL ADMIN ID HERE ---
 const HARDCODED_ORGANIZER_ID = "2d2ec44b-b3c8-4982-9435-283aedf63c87"; 
 
-// --- Event Routes ---
+// --- Event Routes (Admin) ---
 router.get('/', async (req, res) => {
   try {
     const query = {
@@ -19,6 +19,21 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- NEW: PUBLIC route for Cashier Login dropdown ---
+router.get('/public/active', async (req, res) => {
+  try {
+    // Fetch events that are NOT completed.
+    const query = {
+      text: "SELECT event_id, event_name FROM Events WHERE status != 'COMPLETED' ORDER BY event_date DESC",
+    };
+    const result = await pool.query(query);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error fetching active events' });
   }
 });
 
@@ -56,7 +71,26 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Stall Routes (FIXED with commission_rate) ---
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const query = {
+      text: 'DELETE FROM Events WHERE event_id = $1 AND organizer_id = $2 RETURNING *',
+      values: [id, HARDCODED_ORGANIZER_ID],
+    };
+    const result = await pool.query(query);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Event not found or unauthorized' });
+    }
+    res.status(200).json({ message: 'Event and all associated data deleted' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error while deleting event' });
+  }
+});
+
+// --- Stall Routes (Admin-managed) ---
 router.get('/:id/stalls', async (req, res) => {
   const { id: event_id } = req.params;
   try {
@@ -74,7 +108,6 @@ router.get('/:id/stalls', async (req, res) => {
 
 router.post('/:id/stalls', async (req, res) => {
   const { id: event_id } = req.params;
-  // 1. Get commission_rate from request
   const { stall_name, owner_phone, commission_rate } = req.body;
 
   if (!stall_name || !owner_phone || !commission_rate) {
@@ -86,7 +119,6 @@ router.post('/:id/stalls', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // 2. Insert it into the database
     const query = {
       text: `
         INSERT INTO Stalls (stall_name, owner_phone, password_hash, event_id, commission_rate)
@@ -98,14 +130,35 @@ router.post('/:id/stalls', async (req, res) => {
     const { rows: [newStall] } = await pool.query(query);
 
     res.status(201).json({ ...newStall, temp_password: newPassword });
-  } catch (err) {
+  } catch (err)
+ {
     console.error(err.message);
     if (err.code === '23505') return res.status(400).json({ error: 'Stall phone already exists in this event.' });
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// --- Cashier Routes ---
+router.delete('/:event_id/stalls/:stall_id', async (req, res) => {
+  const { event_id, stall_id } = req.params;
+  try {
+    const query = {
+      text: 'DELETE FROM Stalls WHERE stall_id = $1 AND event_id = $2 RETURNING *',
+      values: [stall_id, event_id],
+    };
+    const result = await pool.query(query);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Stall not found in this event' });
+    }
+    res.status(200).json({ message: 'Stall deleted successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error while deleting stall' });
+  }
+});
+
+
+// --- Cashier Routes (Admin-managed) ---
 router.get('/:id/cashiers', async (req, res) => {
   const { id: event_id } = req.params;
   try {
@@ -139,6 +192,95 @@ router.post('/:id/cashiers', async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- Transaction Routes (Admin-managed) ---
+router.get('/:id/transactions', async (req, res) => {
+  const { id: event_id } = req.params;
+
+  try {
+    const query = {
+      text: `
+        SELECT
+          t.transaction_id,
+          t.total_amount,
+          t.organizer_share,
+          t.stall_share,
+          t.created_at,
+          s.stall_name,
+          w.visitor_phone,
+          w.visitor_name,
+          w.membership_id
+        FROM Transactions t
+        JOIN Orders o ON t.order_id = o.order_id
+        JOIN Stalls s ON o.stall_id = s.stall_id
+        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        WHERE o.event_id = $1
+        ORDER BY t.created_at DESC;
+      `,
+      values: [event_id],
+    };
+    const { rows } = await pool.query(query);
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error fetching event transactions' });
+  }
+});
+
+router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
+  const { event_id, stall_id } = req.params;
+
+  try {
+    const summaryQuery = pool.query({
+      text: `
+        SELECT
+          s.stall_name,
+          s.commission_rate,
+          SUM(t.total_amount) as total_sales,
+          SUM(t.organizer_share) as total_organizer_profit,
+          SUM(t.stall_share) as total_amount_owed
+        FROM Transactions t
+        JOIN Orders o ON t.order_id = o.order_id
+        JOIN Stalls s ON o.stall_id = s.stall_id
+        WHERE o.event_id = $1 AND o.stall_id = $2
+        GROUP BY s.stall_name, s.commission_rate;
+      `,
+      values: [event_id, stall_id],
+    });
+
+    const logQuery = pool.query({
+      text: `
+        SELECT
+          t.transaction_id,
+          t.total_amount,
+          t.organizer_share,
+          t.stall_share,
+          t.created_at,
+          o.order_id,
+          w.visitor_name,
+          w.visitor_phone,
+          w.membership_id
+        FROM Transactions t
+        JOIN Orders o ON t.order_id = o.order_id
+        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        WHERE o.event_id = $1 AND o.stall_id = $2
+        ORDER BY t.created_at DESC;
+      `,
+      values: [event_id, stall_id],
+    });
+
+    const [summaryResult, logResult] = await Promise.all([summaryQuery, logQuery]);
+
+    res.status(200).json({
+      summary: summaryResult.rows[0] || null,
+      logs: logResult.rows,
+    });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error fetching stall transactions' });
   }
 });
 

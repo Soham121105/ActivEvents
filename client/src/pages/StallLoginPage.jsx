@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// ... (All styling is identical, just copy/paste) ...
+// --- Styling (Matched to Cashier Login) ---
 const PageContainer = styled.div`
   display: flex; align-items: center; justify-content: center;
   min-height: 100vh; background-color: #f9fafb;
@@ -34,6 +34,13 @@ const Input = styled.input`
     outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
   }
 `;
+const Select = styled.select`
+  background-color: white; border: 1px solid #d1d5db; color: #111827;
+  padding: 10px 14px; border-radius: 8px; font-size: 1rem;
+  &:focus {
+    outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  }
+`;
 const Button = styled.button`
   background-color: #2563eb; color: white; font-weight: 600;
   padding: 12px 20px; border-radius: 8px; border: none; cursor: pointer;
@@ -50,10 +57,32 @@ export default function StallLoginPage() {
   const navigate = useNavigate(); 
   const { login } = useAuth();
 
-  const [phone, setPhone] = useState(''); // Changed from email
+  // --- NEW: Logic copied from Cashier Login ---
+  const [events, setEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Fetch active events on page load
+  useEffect(() => {
+    setLoading(true);
+    axios.get('http://localhost:3001/api/events/public/active')
+      .then(res => {
+        setEvents(res.data);
+        if (res.data.length > 0) {
+          setSelectedEventId(res.data[0].event_id); // Default to the first event
+        }
+      })
+      .catch(err => {
+        console.error("Failed to fetch events", err);
+        setError("Could not load active events.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -62,24 +91,17 @@ export default function StallLoginPage() {
 
     try {
       const response = await axios.post('http://localhost:3001/api/stalls/login', {
-        phone: phone, // Changed from email
+        event_id: selectedEventId,
+        phone: phone,
         password: password,
       });
 
       login(response.data.stall, response.data.token);
-      
-      setLoading(false);
       navigate('/stall/dashboard');
 
     } catch (err) {
       console.error("Error logging in:", err);
-      localStorage.removeItem('stall_token'); 
-      
-      if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error);
-      } else {
-        setError("Login failed. Please try again.");
-      }
+      setError(err.response?.data?.error || "Login failed. Please try again.");
       setLoading(false);
     }
   };
@@ -91,6 +113,25 @@ export default function StallLoginPage() {
         <Form onSubmit={handleLogin}>
           
           <InputGroup>
+            <Label htmlFor="event">Select Event</Label>
+            <Select
+              id="event"
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              required
+              disabled={events.length === 0}
+            >
+              {events.length === 0 ? (
+                <option>Loading active events...</option>
+              ) : (
+                events.map(ev => (
+                  <option key={ev.event_id} value={ev.event_id}>{ev.event_name}</option>
+                ))
+              )}
+            </Select>
+          </InputGroup>
+
+          <InputGroup>
             <Label htmlFor="phone">Phone Number</Label>
             <Input 
               id="phone"
@@ -101,6 +142,7 @@ export default function StallLoginPage() {
               required
             />
           </InputGroup>
+
           <InputGroup>
             <Label htmlFor="password">Password</Label>
             <Input 
@@ -108,14 +150,14 @@ export default function StallLoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Default is 'password123'"
+              placeholder="Your temporary password"
               required
             />
           </InputGroup>
           
           {error && <ErrorMessage>{error}</ErrorMessage>}
 
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading || events.length === 0}>
             {loading ? 'Logging in...' : 'Login'}
           </Button>
         </Form>

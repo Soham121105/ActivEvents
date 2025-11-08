@@ -7,24 +7,25 @@ const cashierAuthMiddleware = require('../middleware/cashierAuthMiddleware');
 
 /**
  * [POST] /api/cashier/login
- * This is our new "SMART LOGIN" for Cashiers
+ * UPDATED: Now requires event_id
  */
 router.post('/login', async (req, res) => {
-  const { cashier_name, pin } = req.body;
-  if (!cashier_name || !pin) {
-    return res.status(400).json({ error: 'Cashier name and PIN are required' });
+  const { cashier_name, pin, event_id } = req.body; // <-- ADD event_id
+  
+  if (!cashier_name || !pin || !event_id) {
+    return res.status(400).json({ error: 'Event, Cashier Name, and PIN are required' });
   }
 
   try {
-    // 1. Find the cashier by their name
+    // 1. Find the cashier for THIS SPECIFIC EVENT
     const query = {
-      text: 'SELECT * FROM Cashiers WHERE cashier_name = $1 AND is_active = true',
-      values: [cashier_name],
+      text: 'SELECT * FROM Cashiers WHERE cashier_name = $1 AND event_id = $2 AND is_active = true',
+      values: [cashier_name, event_id],
     };
     const result = await pool.query(query);
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid credentials' });
+      return res.status(400).json({ error: 'Invalid credentials for this event' });
     }
     const cashier = result.rows[0];
 
@@ -65,15 +66,76 @@ router.post('/login', async (req, res) => {
 router.use(cashierAuthMiddleware);
 
 /**
+ * [POST] /api/cashier/check-balance
+ * Checks the balance of a visitor's wallet for the cashier's event
+ */
+router.post('/check-balance', async (req, res) => {
+  const { visitor_phone } = req.body;
+  const event_id = req.cashier.event_id; // Get event_id from the secure token
+
+  if (!visitor_phone) {
+    return res.status(400).json({ error: 'Phone number is required' });
+  }
+
+  try {
+    const query = {
+      text: "SELECT current_balance FROM Wallets WHERE event_id = $1 AND visitor_phone = $2 AND status = 'ACTIVE'",
+      values: [event_id, visitor_phone],
+    };
+    const { rows: [wallet] } = await pool.query(query);
+
+    if (!wallet) {
+      return res.status(200).json({ current_balance: 0 });
+    }
+
+    res.status(200).json({ current_balance: wallet.current_balance });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error while checking balance' });
+  }
+});
+
+/**
+ * [GET] /api/cashier/log
+ * Fetches the personal transaction log for the logged-in cashier
+ */
+router.get('/log', async (req, res) => {
+  const cashier_id = req.cashier.id;
+
+  try {
+    const query = {
+      text: `
+        SELECT 
+          cl.cash_ledger_id, 
+          cl.transaction_type, 
+          cl.amount, 
+          cl.created_at,
+          w.visitor_phone
+        FROM Cash_Ledger cl
+        JOIN Wallets w ON cl.wallet_id = w.wallet_id
+        WHERE cl.cashier_id = $1
+        ORDER BY cl.created_at DESC;
+      `,
+      values: [cashier_id],
+    };
+
+    const { rows } = await pool.query(query);
+    res.status(200).json(rows);
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error fetching transaction log' });
+  }
+});
+
+
+/**
  * [POST] /api/cashier/topup
  * Creates or "tops-up" a visitor's digital wallet
- * This is now "smart" - it gets the event_id from the token
  */
 router.post('/topup', async (req, res) => {
-  // 1. Get data from the request
-  const { visitor_phone, amount } = req.body;
+  const { visitor_phone, amount, visitor_name, membership_id } = req.body;
   
-  // 2. Get cashier_id and event_id from the SECURE TOKEN
   const cashier_id = req.cashier.id;
   const event_id = req.cashier.event_id;
   
@@ -88,22 +150,21 @@ router.post('/topup', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 3. Find or Create the Wallet (Upsert)
-    // This is now robust and uses the event_id from the token
     const walletQuery = {
       text: `
-        INSERT INTO Wallets (event_id, visitor_phone, current_balance, status)
-        VALUES ($1, $2, $3, 'ACTIVE')
+        INSERT INTO Wallets (event_id, visitor_phone, current_balance, status, visitor_name, membership_id)
+        VALUES ($1, $2, $3, 'ACTIVE', $4, $5)
         ON CONFLICT (event_id, visitor_phone)
         DO UPDATE SET
-          current_balance = Wallets.current_balance + $3
+          current_balance = Wallets.current_balance + $3,
+          visitor_name = $4,
+          membership_id = $5
         RETURNING *;
       `,
-      values: [event_id, visitor_phone, amount],
+      values: [event_id, visitor_phone, amount, visitor_name || null, membership_id || null],
     };
     const { rows: [updatedWallet] } = await client.query(walletQuery);
 
-    // 4. Log this transaction in the Cash_Ledger
     const ledgerQuery = {
       text: `
         INSERT INTO Cash_Ledger (wallet_id, cashier_id, transaction_type, amount)
@@ -116,7 +177,6 @@ router.post('/topup', async (req, res) => {
 
     await client.query('COMMIT');
     
-    // 5. Send back a robust success message
     res.status(200).json({
       message: 'Top-up successful',
       transaction_id: ledgerEntry.cash_ledger_id,
@@ -136,12 +196,11 @@ router.post('/topup', async (req, res) => {
 /**
  * [POST] /api/cashier/refund
  * Refunds a visitor's remaining balance
- * This is also "smart" and uses the event_id from the token
  */
 router.post('/refund', async (req, res) => {
-  const { visitor_phone } = req.body; // We only need the phone
+  const { visitor_phone } = req.body;
   const cashier_id = req.cashier.id;
-  const event_id = req.cashier.event_id; // Get from token
+  const event_id = req.cashier.event_id;
 
   if (!visitor_phone) {
     return res.status(400).json({ error: 'Phone number is required' });
@@ -151,7 +210,6 @@ router.post('/refund', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Get the current balance and lock the row
     const getWalletQuery = {
       text: "SELECT * FROM Wallets WHERE event_id = $1 AND visitor_phone = $2 AND status = 'ACTIVE' FOR UPDATE",
       values: [event_id, visitor_phone],
@@ -159,7 +217,7 @@ router.post('/refund', async (req, res) => {
     const { rows: [wallet] } = await client.query(getWalletQuery);
 
     if (!wallet) {
-      return res.status(404).json({ error: 'Active wallet not found' });
+      return res.status(44).json({ error: 'Active wallet not found' });
     }
 
     const refundAmount = parseFloat(wallet.current_balance);
@@ -167,14 +225,12 @@ router.post('/refund', async (req, res) => {
       return res.status(400).json({ error: 'Wallet has no balance to refund' });
     }
 
-    // 2. Update wallet: set balance to 0 and status to 'ENDED'
     const updateWalletQuery = {
       text: "UPDATE Wallets SET current_balance = 0, status = 'ENDED' WHERE wallet_id = $1",
       values: [wallet.wallet_id],
     };
     await client.query(updateWalletQuery);
 
-    // 3. Log the refund
     const ledgerQuery = {
       text: `
         INSERT INTO Cash_Ledger (wallet_id, cashier_id, transaction_type, amount)

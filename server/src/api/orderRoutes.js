@@ -6,13 +6,24 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.use(authMiddleware);
 
 // GET /api/orders/live (For the KDS)
+// THIS QUERY IS NOW UPGRADED TO INCLUDE FULL VISITOR DETAILS
 router.get('/live', async (req, res) => {
   const stallId = req.stall.id;
   try {
     const query = {
       text: `
-        SELECT o.order_id, o.total_amount, o.order_status, 
-               COALESCE(w.visitor_phone, o.customer_name) as customer_name
+        SELECT 
+          o.order_id, 
+          o.total_amount, 
+          o.order_status, 
+          o.created_at,
+          w.visitor_phone,
+          w.membership_id,
+          -- This logic displays the "best" name available for the KDS
+          -- 1. Wallet Name (if present)
+          -- 2. Manual Order Name (if no wallet)
+          -- 3. Wallet Phone (as a fallback)
+          COALESCE(w.visitor_name, o.customer_name, w.visitor_phone) as customer_display_name
         FROM Orders o
         LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
         WHERE o.stall_id = $1 AND o.order_status = 'PENDING'
@@ -22,6 +33,7 @@ router.get('/live', async (req, res) => {
     };
     const { rows: orders } = await pool.query(query);
 
+    // This part remains the same, fetching the line items for each order
     const fullOrders = await Promise.all(
       orders.map(async (order) => {
         const itemsQuery = {
@@ -56,9 +68,9 @@ router.post('/manual', async (req, res) => {
     // 1. Create the Order
     const orderQuery = {
       text: `
-        INSERT INTO Orders (stall_id, total_amount, order_status, customer_name, payment_type)
-        VALUES ($1, $2, 'PENDING', $3, $4) 
-        RETURNING order_id, created_at;
+        INSERT INTO Orders (stall_id, total_amount, order_status, customer_name, payment_type, event_id)
+        SELECT $1, $2, 'PENDING', $3, $4, event_id FROM Stalls WHERE stall_id = $1
+        RETURNING order_id, created_at, event_id;
       `,
       values: [stallId, total_amount, customer_name || 'Walk-up', payment_type],
     };
@@ -89,11 +101,14 @@ router.post('/manual', async (req, res) => {
       order_id: newOrder.order_id,
       created_at: newOrder.created_at,
       stall_id: stallId,
-      customer_name: customer_name || 'Walk-up',
+      // This name will be picked up by the COALESCE in the /live query
+      customer_display_name: customer_name || 'Walk-up', 
       total_amount: total_amount,
       order_status: 'PENDING',
       payment_type: payment_type,
-      items: items
+      items: items,
+      visitor_phone: null, // Manual orders don't have a phone on the wallet
+      membership_id: null  // Manual orders don't have a membership ID
     };
     
     // We will emit the socket.io event here later
@@ -140,5 +155,43 @@ router.post('/:id/complete', async (req, res) => {
     res.status(500).json({ error: 'Server error while completing order' });
   }
 });
+const jwt = require('jsonwebtoken');
+// We have REMOVED the "require('dotenv').config()" line.
+// This is correct, because 'server.js' already loaded it.
+
+// This is our "gatekeeper" function
+module.exports = function(req, res, next) {
+  // 1. Get the token from the request header
+  const authHeader = req.header('Authorization');
+  
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No token, authorization denied' });
+  }
+
+  // 2. Check if the token is valid
+  try {
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Token is not valid' });
+    }
+
+    // 3. Verify the token
+    // This will now work, because process.env.JWT_SECRET was loaded by server.js
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // 4. Attach the 'stall' info to the request
+    req.stall = decoded.stall; 
+    
+    // 5. Continue
+    next(); 
+
+  } catch (err) {
+    console.error('Token verification failed:', err.message);
+    // 6. --- THIS IS THE FIX ---
+    // We must RETURN after sending the error to stop execution
+    return res.status(401).json({ error: 'Token is not valid' });
+  }
+};
+
 
 module.exports = router;

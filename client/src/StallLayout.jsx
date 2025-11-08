@@ -1,29 +1,21 @@
 import React, { useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import styled, { createGlobalStyle } from 'styled-components';
-import axios from 'axios'; // We still need this for the logout
-
-// --- 1. IMPORT THE 'useAuth' HOOK ---
-// This gives us access to the 'token' and 'logout' function
 import { useAuth } from './context/AuthContext';
 
-// This is our new "Private Route" logic
+// --- Private Route Hook ---
 const usePrivateRoute = () => {
-  const { token } = useAuth(); // Get the token from our global state
+  const { token } = useAuth();
   const navigate = useNavigate();
   
   useEffect(() => {
-    // This runs when the component loads
-    // If there is no token, kick them back to the login page
     if (!token) {
       navigate('/stall-login');
     }
-    // We add 'token' as a dependency, so if the token changes (e.g., on logout),
-    // this check re-runs.
   }, [token, navigate]);
 };
 
-// --- Styling (Same as before) ---
+// --- Styling ---
 const GlobalStyle = createGlobalStyle`
   body { margin: 0; padding: 0; background-color: #f9fafb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
 `;
@@ -65,7 +57,7 @@ const NavItem = styled.li`
       background-color: #f3f4f6;
     }
     &.active {
-      background-color: #f0fdf4;
+      background-color: #f0fdf4; /* Green accent */
       color: #15803d;
     }
   }
@@ -98,21 +90,15 @@ const LogoutButton = styled.button`
 // --- End of Styling ---
 
 function StallLayout() {
-  // 2. Run our security check. This MUST be first.
   usePrivateRoute(); 
-  
-  // 3. Get the 'logout' function from our global state
   const { logout } = useAuth();
-  const navigate = useNavigate(); // We still need navigate for the logout handler
+  const navigate = useNavigate();
 
   const handleLogout = () => {
-    // Call the logout function from our context
     logout();
-    // Navigate to the login page
     navigate('/stall-login');
   };
 
-  // 4. Render the layout
   return (
     <AppLayout>
       <GlobalStyle />
@@ -120,15 +106,10 @@ function StallLayout() {
         <LogoText>Stall Dashboard</LogoText>
         <NavList>
           
+          {/* "Quick POS" is now the main dashboard page */}
           <NavItem>
-            <NavLink to="/stall/dashboard" end>
-              Live Dashboard (KDS)
-            </NavLink>
-          </NavItem>
-          
-          <NavItem>
-            <NavLink to="/stall/pos">
-              Quick POS
+            <NavLink to="/stall/pos" end>
+              Point of Sale
             </NavLink>
           </NavItem>
           
@@ -139,14 +120,21 @@ function StallLayout() {
           </NavItem>
           
           <NavItem>
+            <NavLink to="/stall/transactions">
+              Transactions
+            </NavLink>
+          </NavItem>
+          
+          <NavItem>
             <NavLink to="/stall/qr">
               Event QR Code
             </NavLink>
           </NavItem>
+          
+          {/* We've removed the "Live Dashboard (KDS)" link */}
 
         </NavList>
         
-        {/* We now call the 'logout' function from our context */}
         <NavItem style={{ marginTop: 'auto' }}> 
           <LogoutButton onClick={handleLogout}>
             Logout

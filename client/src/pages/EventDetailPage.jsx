@@ -1,24 +1,23 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-// We import 'useParams' (to read the ID) and 'Link' (for all our new buttons)
 import { useParams, Link } from 'react-router-dom';
 
 // --- Styling ---
 const PageHeader = styled.h1`
-  font-size: 2.25rem; /* 36px */
+  font-size: 2.25rem;
   font-weight: 800;
-  color: #111827; /* gray-900 */
+  color: #111827;
   margin-bottom: 24px;
 `;
 
 const LoadingText = styled.p`
   font-size: 1.125rem;
-  color: #6b7280; /* gray-500 */
+  color: #6b7280;
 `;
 
 const BackLink = styled(Link)`
-  color: #2563eb; /* blue-600 */
+  color: #2563eb;
   text-decoration: none;
   font-weight: 500;
   margin-bottom: 16px;
@@ -31,7 +30,7 @@ const BackLink = styled(Link)`
 
 const Section = styled.div`
   background-color: white;
-  border: 1px solid #e5e7eb; /* gray-200 */
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 24px;
   margin-bottom: 24px;
@@ -54,9 +53,8 @@ const SectionTitle = styled.h2`
   margin: 0;
 `;
 
-// This is our "Add" button
 const Button = styled(Link)`
-  background-color: #2563eb; /* blue-600 */
+  background-color: #2563eb;
   color: white;
   font-weight: 600;
   padding: 10px 20px;
@@ -67,7 +65,7 @@ const Button = styled(Link)`
   text-decoration: none;
   transition: background-color 0.2s;
   &:hover {
-    background-color: #1d4ed8; /* blue-700 */
+    background-color: #1d4ed8;
   }
 `;
 
@@ -82,8 +80,7 @@ const ListItem = styled.li`
   justify-content: space-between;
   align-items: center;
   padding: 16px 0;
-  border-bottom: 1px solid #e5e7eb; /* gray-200 */
-  text-decoration: none;
+  border-bottom: 1px solid #e5e7eb;
   
   &:last-child {
     border-bottom: none;
@@ -92,51 +89,80 @@ const ListItem = styled.li`
 
 const ItemName = styled.span`
   font-weight: 600;
-  color: #1f2937; /* gray-800 */
+  color: #1f2937;
 `;
 
 const ItemDetails = styled.span`
   font-size: 0.875rem;
-  color: #6b7280; /* gray-500 */
+  color: #6b7280;
 `;
 
-// --- The Page Component (Updated) ---
-export default function EventDetailPage() {
-  const { id } = useParams(); // Get the event ID from the URL
+// --- NEW: Delete button for list items ---
+const ItemDeleteButton = styled.button`
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  margin-left: 16px;
+  
+  &:hover {
+    color: #ef4444;
+    text-decoration: underline;
+  }
+`;
+// --- End of new styles ---
 
-  // --- STATE ---
+export default function EventDetailPage() {
+  const { id } = useParams();
+
   const [event, setEvent] = useState(null);
-  const [stalls, setStalls] = useState([]); // A new state to hold the stalls
-  const [cashiers, setCashiers] = useState([]); // A new state to hold cashiers
+  const [stalls, setStalls] = useState([]);
+  const [cashiers, setCashiers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // --- 3. Fetch ALL event data (details, stalls, and cashiers) ---
+  const fetchData = async () => {
+    try {
+      setLoading(true); // Ensure loading is true on refetch
+      const [eventRes, stallsRes, cashiersRes] = await Promise.all([
+        axios.get(`http://localhost:3001/api/events/${id}`),
+        axios.get(`http://localhost:3001/api/events/${id}/stalls`),
+        axios.get(`http://localhost:3001/api/events/${id}/cashiers`)
+      ]);
+      
+      setEvent(eventRes.data);
+      setStalls(stallsRes.data);
+      setCashiers(cashiersRes.data);
+    } catch (err) {
+      console.error("Error fetching event data:", err);
+      setError("Failed to fetch event data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // We use Promise.all to run all 3 API calls at the same time
-        const [eventRes, stallsRes, cashiersRes] = await Promise.all([
-          axios.get(`http://localhost:3001/api/events/${id}`),
-          axios.get(`http://localhost:3001/api/events/${id}/stalls`),
-          axios.get(`http://localhost:3001/api/events/${id}/cashiers`)
-        ]);
-        
-        setEvent(eventRes.data);
-        setStalls(stallsRes.data);
-        setCashiers(cashiersRes.data);
-      } catch (err) {
-        console.error("Error fetching event data:", err);
-        setError("Failed to fetch event data.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
-  }, [id]); // Re-run if the 'id' in the URL changes
+  }, [id]);
 
-  // --- RENDER LOGIC ---
+  // --- NEW: Delete Stall Handler ---
+  const handleDeleteStall = async (stallId) => {
+    if (!window.confirm("Are you sure you want to delete this stall?\nAll its data (menu, orders, etc.) will be lost.")) {
+      return;
+    }
+    
+    try {
+      await axios.delete(`http://localhost:3001/api/events/${id}/stalls/${stallId}`);
+      // Update UI instantly
+      setStalls(prevStalls => prevStalls.filter(stall => stall.stall_id !== stallId));
+    } catch (err) {
+      console.error("Error deleting stall:", err);
+      alert("Failed to delete stall.");
+    }
+  };
+
   if (loading) {
     return <LoadingText>Loading event details...</LoadingText>;
   }
@@ -150,7 +176,6 @@ export default function EventDetailPage() {
       <BackLink to="/">&larr; Back to Dashboard</BackLink>
       <PageHeader>{event.event_name}</PageHeader>
       
-      {/* --- This is the new "Stall Management" hub --- */}
       <Section>
         <SectionHeader>
           <SectionTitle>Stall Management</SectionTitle>
@@ -166,20 +191,24 @@ export default function EventDetailPage() {
           ) : (
             stalls.map((stall) => (
               <ListItem key={stall.stall_id}>
-                {/* This will be the link to the stall's sales page */}
-                <Link to={`/stall/${stall.stall_id}/sales`}>
-                  <ItemName>{stall.stall_name}</ItemName>
-                </Link>
-                <ItemDetails>
-                  {stall.owner_phone}
-                </ItemDetails>
+                <div>
+                  <Link to={`/stall/${stall.stall_id}/sales`}> {/* This link doesn't exist yet, but we'll build it in 4.3 */}
+                    <ItemName>{stall.stall_name}</ItemName>
+                  </Link>
+                  <ItemDetails style={{display: 'block', marginTop: '4px'}}>
+                    {stall.owner_phone}
+                  </ItemDetails>
+                </div>
+                {/* --- NEW: Delete button for each stall --- */}
+                <ItemDeleteButton onClick={() => handleDeleteStall(stall.stall_id)}>
+                  Delete
+                </ItemDeleteButton>
               </ListItem>
             ))
           )}
         </List>
       </Section>
       
-      {/* --- This is the new "Cashier Management" hub --- */}
       <Section>
         <SectionHeader>
           <SectionTitle>Cashier Management</SectionTitle>
@@ -197,7 +226,6 @@ export default function EventDetailPage() {
               <ListItem key={cashier.cashier_id}>
                 <ItemName>{cashier.cashier_name}</ItemName>
                 <ItemDetails>
-                  {/* We will show the generated PIN here later */}
                   PIN: ****
                 </ItemDetails>
               </ListItem>

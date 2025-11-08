@@ -7,12 +7,12 @@ const cors = require('cors');
 const pool = require('./src/config/db'); // Import our pool
 
 // 3. Import all our API routes
-// This is our new, robust structure
-const eventRoutes = require('./src/api/eventRoutes');   // For Admins
-const stallRoutes = require('./src/api/stallRoutes');   // For Stalls
-const menuRoutes = require('./src/api/menuRoutes');     // For Stalls (secure)
-const cashierRoutes = require('./src/api/cashierRoutes'); // For Cashiers
-// (We will add orderRoutes here later)
+const eventRoutes = require('./src/api/eventRoutes');
+const stallRoutes = require('./src/api/stallRoutes');
+const menuRoutes = require('./src/api/menuRoutes');
+const cashierRoutes = require('./src/api/cashierRoutes');
+const visitorRoutes = require('./src/api/visitorRoutes'); // This was already here
+const orderRoutes = require('./src/api/orderRoutes');
 
 // 4. Initialize app
 const app = express();
@@ -23,15 +23,16 @@ app.use(cors());
 app.use(express.json());
 
 // 6. Setup Our API Routes
-// All Admin routes will be on '/api/events'
 app.use('/api/events', eventRoutes); 
-
-// All Stall routes (login, menu) will be on '/api/stalls'
 app.use('/api/stalls', stallRoutes); 
 app.use('/api/menu', menuRoutes); 
-
-// All Cashier routes (login, topup) will be on '/api/cashier'
 app.use('/api/cashier', cashierRoutes); 
+app.use('/api/orders', orderRoutes);
+
+// --- THIS IS THE FIX ---
+// This line was missing, which caused all visitor payments to fail.
+app.use('/api/visitor', visitorRoutes);
+// --- END OF FIX ---
 
 // 7. Start the server
 console.log("Attempting to connect to database...");

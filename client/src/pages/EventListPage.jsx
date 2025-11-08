@@ -9,7 +9,6 @@ const PageHeaderContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  /* Mobile responsiveness */
   @media (max-width: 768px) {
     flex-direction: column;
     align-items: flex-start;
@@ -18,15 +17,15 @@ const PageHeaderContainer = styled.div`
 `;
 
 const PageHeader = styled.h1`
-  font-size: 2.25rem; /* 36px */
+  font-size: 2.25rem;
   font-weight: 800;
-  color: #111827; /* gray-900 */
+  color: #111827;
   margin-top: 0;
   margin-bottom: 0;
 `;
 
 const Button = styled(Link)`
-  background-color: #2563eb; /* blue-600 */
+  background-color: #2563eb;
   color: white;
   font-weight: 600;
   padding: 12px 24px;
@@ -37,9 +36,8 @@ const Button = styled(Link)`
   text-decoration: none;
   transition: background-color 0.2s;
   &:hover {
-    background-color: #1d4ed8; /* blue-700 */
+    background-color: #1d4ed8;
   }
-  /* Mobile responsiveness */
   @media (max-width: 768px) {
     width: 100%;
     text-align: center;
@@ -48,12 +46,12 @@ const Button = styled(Link)`
 
 const LoadingText = styled.p`
   font-size: 1.125rem;
-  color: #6b7280; /* gray-500 */
+  color: #6b7280;
 `;
 
 const Section = styled.div`
   background-color: white;
-  border: 1px solid #e5e7eb; /* gray-200 */
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 24px;
   margin-bottom: 24px;
@@ -70,12 +68,10 @@ const SectionTitle = styled.h2`
   border-bottom: 1px solid #e5e7eb;
 `;
 
-// --- New Dashboard-Specific Components ---
 const StatsGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 24px;
-  /* Mobile responsiveness */
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
   }
@@ -88,14 +84,14 @@ const StatCard = styled(Section)`
 const StatValue = styled.p`
   font-size: 2.25rem;
   font-weight: 700;
-  color: #2563eb; /* blue-600 */
+  color: #2563eb;
   margin: 0 0 8px 0;
 `;
 
 const StatLabel = styled.p`
   font-size: 0.875rem;
   font-weight: 500;
-  color: #6b7280; /* gray-500 */
+  color: #6b7280;
   margin: 0;
 `;
 
@@ -114,6 +110,8 @@ const EventCard = styled(Link)`
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease-in-out;
+  display: flex;
+  flex-direction: column;
   
   &:hover {
     box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.08);
@@ -135,7 +133,32 @@ const EventCardDate = styled.p`
   margin: 0;
 `;
 
-// --- The "Event Dashboard" Page Component ---
+// --- NEW: Styles for the delete button ---
+const EventCardFooter = styled.div`
+  margin-top: auto;
+  padding-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const DeleteButton = styled.button`
+  background: transparent;
+  border: none;
+  color: #9ca3af; /* gray-400 */
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+  
+  &:hover {
+    color: #ef4444; /* red-500 */
+    text-decoration: underline;
+  }
+`;
+// --- End of new styles ---
+
+
 export default function EventListPage() {
   const [events, setEvents] = useState([]); 
   const [loading, setLoading] = useState(true);
@@ -143,7 +166,6 @@ export default function EventListPage() {
 
   const fetchEvents = async () => {
     try {
-      // This calls our backend API
       const response = await axios.get('http://localhost:3001/api/events');
       setEvents(response.data); 
     } catch (err) {
@@ -158,17 +180,34 @@ export default function EventListPage() {
     fetchEvents();
   }, []);
 
+  // --- NEW: Delete Event Handler ---
+  const handleDeleteEvent = async (e, eventId) => {
+    e.preventDefault(); // Stop the <Link> from navigating
+    e.stopPropagation(); // Stop event bubbling
+
+    if (!window.confirm("ARE YOU SURE?\n\nThis will delete the event AND all its stalls, cashiers, wallets, and orders.\nThis action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await axios.delete(`http://localhost:3001/api/events/${eventId}`);
+      // Update state to remove the event from the UI instantly
+      setEvents(prevEvents => prevEvents.filter(event => event.event_id !== eventId));
+    } catch (err) {
+      console.error("Error deleting event:", err);
+      alert("Failed to delete the event. Please try again.");
+    }
+  };
+
   return (
     <> 
       <PageHeaderContainer>
         <PageHeader>Event Dashboard</PageHeader>
-        {/* This is the new "Add Event" button you wanted */}
         <Button to="/create-event">
           + Create New Event
         </Button>
       </PageHeaderContainer>
 
-      {/* --- This is the new "Professional" Dashboard Section --- */}
       <StatsGrid>
         <StatCard>
           <StatValue>₹0</StatValue>
@@ -183,7 +222,6 @@ export default function EventListPage() {
           <StatLabel>Active / Upcoming Events</StatLabel>
         </StatCard>
       </StatsGrid>
-      {/* --- End of new section --- */}
       
       <Section style={{ marginTop: '24px' }}>
         <SectionTitle>Upcoming Events</SectionTitle>
@@ -198,14 +236,23 @@ export default function EventListPage() {
             ) : (
               events.map((event) => (
                 <EventCard key={event.event_id} to={`/event/${event.event_id}`}>
-                  <EventCardName>{event.event_name}</EventCardName>
-                  <EventCardDate>
-                    {new Date(event.event_date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </EventCardDate>
+                  <div> {/* Added div to contain main content */}
+                    <EventCardName>{event.event_name}</EventCardName>
+                    <EventCardDate>
+                      {new Date(event.event_date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </EventCardDate>
+                  </div>
+                  
+                  {/* --- NEW: Delete button added to footer --- */}
+                  <EventCardFooter>
+                    <DeleteButton onClick={(e) => handleDeleteEvent(e, event.event_id)}>
+                      Delete Event
+                    </DeleteButton>
+                  </EventCardFooter>
                 </EventCard>
               ))
             )}

@@ -2,73 +2,81 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 
-// --- 1. Import BOTH of our Auth Providers ---
+// --- Auth Providers ---
 import { AuthProvider } from './context/AuthContext.jsx'
 import { CashierAuthProvider } from './context/CashierAuthContext.jsx'
+import { VisitorAuthProvider } from './context/VisitorAuthContext.jsx'
 
-/* --- Import Our "Admin" Layout & Pages --- */
+/* --- Admin --- */
 import App from './App.jsx' 
-import EventListPage from './pages/EventListPage.jsx'     // The Dashboard (/)
-import AddEventPage from './pages/AddEventPage.jsx'       // The "Create Event" page (/create-event)
-import EventDetailPage from './pages/EventDetailPage.jsx'   // The "Event Hub" (/event/:id)
+import EventListPage from './pages/EventListPage.jsx'
+import AddEventPage from './pages/AddEventPage.jsx'
+import EventDetailPage from './pages/EventDetailPage.jsx'
+import AddStallPage from './pages/AddStallPage.jsx'
+import AddCashierPage from './pages/AddCashierPage.jsx'
 
-// --- THESE ARE OUR NEW, EVENT-CENTRIC PAGES ---
-import AddStallPage from './pages/AddStallPage.jsx'       // The "Create Stall" form
-import AddCashierPage from './pages/AddCashierPage.jsx'   // The "Create Cashier" form
-
-
-/* --- Import Our "Stall" Layout & Pages --- */
+/* --- Stall --- */
 import StallLayout from './StallLayout.jsx'
 import StallLoginPage from './pages/StallLoginPage.jsx'
-import StallDashboardPage from './pages/stall/StallDashboardPage.jsx'
+// StallDashboardPage is now ABANDONED
 import StallMenuPage from './pages/stall/StallMenuPage.jsx'
 import StallPosPage from './pages/stall/StallPosPage.jsx'
 import StallQrPage from './pages/stall/StallQrPage.jsx'
+import StallTransactionsPage from './pages/stall/StallTransactionsPage.jsx' 
 
-/* --- Import Our "Cashier" Layout & Pages --- */
+/* --- Cashier --- */
 import CashierLoginPage from './pages/cashier/CashierLoginPage.jsx'
 import CashierDashboardPage from './pages/cashier/CashierDashboardPage.jsx'
+import CashierLogPage from './pages/cashier/CashierLogPage.jsx'
+
+/* --- Visitor --- */
+import VisitorLoginPage from './pages/visitor/VisitorLoginPage.jsx'
+import VisitorMenuPage from './pages/visitor/VisitorMenuPage.jsx'
 
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* 3. WRAP THE APP IN BOTH PROVIDERS */}
     <AuthProvider>
       <CashierAuthProvider>
-        <BrowserRouter>
-          <Routes>
-            
-            {/* --- ROUTE GROUP 1: THE ADMIN PANEL (has admin sidebar) --- */}
-            <Route path="/" element={<App />}>
-              <Route index element={<EventListPage />} /> {/* Dashboard */}
-              <Route path="create-event" element={<AddEventPage />} /> {/* Create Event Form */}
-              <Route path="event/:id" element={<EventDetailPage />} /> {/* Event Hub */}
+        <VisitorAuthProvider>
+          <BrowserRouter>
+            <Routes>
               
-              {/* --- THESE ARE OUR NEW, CORRECTED ROUTES --- */}
-              <Route path="event/:id/add-stall" element={<AddStallPage />} />
-              <Route path="event/:id/add-cashier" element={<AddCashierPage />} />
+              {/* --- ROUTE GROUP 1: THE ADMIN PANEL --- */}
+              <Route path="/" element={<App />}>
+                <Route index element={<EventListPage />} />
+                <Route path="create-event" element={<AddEventPage />} />
+                <Route path="event/:id" element={<EventDetailPage />} />
+                <Route path="event/:id/add-stall" element={<AddStallPage />} />
+                <Route path="event/:id/add-cashier" element={<AddCashierPage />} />
+              </Route>
 
-              {/* We will add the Stall Sales page route here later */}
-              {/* <Route path="stall/:stallId/sales" element={<StallSalesPage />} /> */}
-            </Route>
+              {/* --- ROUTE GROUP 2: STALL LOGIN --- */}
+              <Route path="/stall-login" element={<StallLoginPage />} />
 
-            {/* --- ROUTE GROUP 2: STALL LOGIN (no sidebar) --- */}
-            <Route path="/stall-login" element={<StallLoginPage />} />
+              {/* --- ROUTE GROUP 3: THE STALL DASHBOARD --- */}
+              <Route path="/stall" element={<StallLayout />}>
+                {/* REMOVED: <Route path="dashboard" element={<StallDashboardPage />} /> */}
+                <Route path="pos" element={<StallPosPage />} />
+                <Route path="menu" element={<StallMenuPage />} />
+                <Route path="transactions" element={<StallTransactionsPage />} />
+                <Route path="qr" element={<StallQrPage />} />
+                {/* ADD a redirect from the old dashboard link to the new POS page */}
+                <Route path="dashboard" element={<StallPosPage />} /> 
+              </Route>
+              
+              {/* --- ROUTE GROUP 4: CASHIER APP --- */}
+              <Route path="/cashier-login" element={<CashierLoginPage />} />
+              <Route path="/cashier/dashboard" element={<CashierDashboardPage />} />
+              <Route path="/cashier/log" element={<CashierLogPage />} />
+              
+              {/* --- ROUTE GROUP 5: VISITOR APP --- */}
+              <Route path="/v/login" element={<VisitorLoginPage />} />
+              <Route path="/v/stall/:stall_id" element={<VisitorMenuPage />} />
 
-            {/* --- ROUTE GROUP 3: THE STALL DASHBOARD (has stall sidebar) --- */}
-            <Route path="/stall" element={<StallLayout />}>
-              <Route path="dashboard" element={<StallDashboardPage />} />
-              <Route path="pos" element={<StallPosPage />} />
-              <Route path="menu" element={<StallMenuPage />} />
-              <Route path="qr" element={<StallQrPage />} />
-            </Route>
-            
-            {/* --- ROUTE GROUP 4: CASHIER APP (no sidebar) --- */}
-            <Route path="/cashier-login" element={<CashierLoginPage />} />
-            <Route path="/cashier/dashboard" element={<CashierDashboardPage />} />
-
-          </Routes>
-        </BrowserRouter>
+            </Routes>
+          </BrowserRouter>
+        </VisitorAuthProvider>
       </CashierAuthProvider>
     </AuthProvider>
   </React.StrictMode>,
