@@ -1,12 +1,11 @@
 const express = require('express');
-const pool = require('../config/db');
+const pool = require('../config/db'); // --- FIX ---
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(authMiddleware);
 
 // GET /api/orders/live (For the KDS)
-// THIS QUERY IS NOW UPGRADED TO INCLUDE FULL VISITOR DETAILS
 router.get('/live', async (req, res) => {
   const stallId = req.stall.id;
   try {
@@ -19,13 +18,9 @@ router.get('/live', async (req, res) => {
           o.created_at,
           w.visitor_phone,
           w.membership_id,
-          -- This logic displays the "best" name available for the KDS
-          -- 1. Wallet Name (if present)
-          -- 2. Manual Order Name (if no wallet)
-          -- 3. Wallet Phone (as a fallback)
           COALESCE(w.visitor_name, o.customer_name, w.visitor_phone) as customer_display_name
-        FROM Orders o
-        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        FROM orders o
+        LEFT JOIN wallets w ON o.wallet_id = w.wallet_id
         WHERE o.stall_id = $1 AND o.order_status = 'PENDING'
         ORDER BY o.created_at ASC; 
       `,
@@ -33,11 +28,10 @@ router.get('/live', async (req, res) => {
     };
     const { rows: orders } = await pool.query(query);
 
-    // This part remains the same, fetching the line items for each order
     const fullOrders = await Promise.all(
       orders.map(async (order) => {
         const itemsQuery = {
-          text: 'SELECT item_name, quantity FROM Order_Items WHERE order_id = $1',
+          text: 'SELECT item_name, quantity FROM order_items WHERE order_id = $1',
           values: [order.order_id],
         };
         const { rows: items } = await pool.query(itemsQuery);
@@ -68,8 +62,8 @@ router.post('/manual', async (req, res) => {
     // 1. Create the Order
     const orderQuery = {
       text: `
-        INSERT INTO Orders (stall_id, total_amount, order_status, customer_name, payment_type, event_id)
-        SELECT $1, $2, 'PENDING', $3, $4, event_id FROM Stalls WHERE stall_id = $1
+        INSERT INTO orders (stall_id, total_amount, order_status, customer_name, payment_type, event_id)
+        SELECT $1, $2, 'PENDING', $3, $4, event_id FROM stalls WHERE stall_id = $1
         RETURNING order_id, created_at, event_id;
       `,
       values: [stallId, total_amount, customer_name || 'Walk-up', payment_type],
@@ -80,7 +74,7 @@ router.post('/manual', async (req, res) => {
     const itemInsertPromises = items.map(item => {
       const itemQuery = {
         text: `
-          INSERT INTO Order_Items (order_id, item_id, item_name, quantity, price_per_item)
+          INSERT INTO order_items (order_id, item_id, item_name, quantity, price_per_item)
           VALUES ($1, $2, $3, $4, $5);
         `,
         values: [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price],
@@ -90,10 +84,6 @@ router.post('/manual', async (req, res) => {
     
     await Promise.all(itemInsertPromises);
 
-    // 3. We will skip the 'Transactions' table for now,
-    // as a manual cash sale doesn't need a digital "split" record.
-    // We can add this later if the admin needs it for reporting.
-
     await client.query('COMMIT');
 
     // 4. Return the new, complete order
@@ -101,17 +91,15 @@ router.post('/manual', async (req, res) => {
       order_id: newOrder.order_id,
       created_at: newOrder.created_at,
       stall_id: stallId,
-      // This name will be picked up by the COALESCE in the /live query
       customer_display_name: customer_name || 'Walk-up', 
       total_amount: total_amount,
       order_status: 'PENDING',
       payment_type: payment_type,
       items: items,
-      visitor_phone: null, // Manual orders don't have a phone on the wallet
-      membership_id: null  // Manual orders don't have a membership ID
+      visitor_phone: null, 
+      membership_id: null
     };
     
-    // We will emit the socket.io event here later
     req.io.to(stallId).emit('new_order', finalOrder);
 
     res.status(201).json(finalOrder);
@@ -133,7 +121,7 @@ router.post('/:id/complete', async (req, res) => {
   try {
     const query = {
       text: `
-        UPDATE Orders
+        UPDATE orders
         SET order_status = 'COMPLETED'
         WHERE order_id = $1 AND stall_id = $2 AND order_status = 'PENDING'
         RETURNING *;
@@ -146,7 +134,6 @@ router.post('/:id/complete', async (req, res) => {
       return res.status(404).json({ error: 'Order not found or not pending' });
     }
 
-    // We will emit the socket.io event here later
     req.io.to(stallId).emit('remove_order', orderId);
 
     res.status(200).json(updatedOrder);
@@ -155,10 +142,5 @@ router.post('/:id/complete', async (req, res) => {
     res.status(500).json({ error: 'Server error while completing order' });
   }
 });
-
-// --- THIS IS THE FIX ---
-// The incorrect authMiddleware function was here. It has been removed.
-// The only export from this file should be the router.
-// --- END OF FIX ---
 
 module.exports = router;

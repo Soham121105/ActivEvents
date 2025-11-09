@@ -1,5 +1,5 @@
 const express = require('express');
-const pool = require('../config/db');
+const pool = require('../config/db'); // --- FIX ---
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const visitorAuthMiddleware = require('../middleware/visitorAuthMiddleware');
@@ -13,7 +13,7 @@ router.post('/login', async (req, res) => {
 
   try {
     const query = {
-      text: "SELECT * FROM Wallets WHERE visitor_phone = $1 AND event_id = $2 AND status = 'ACTIVE'",
+      text: "SELECT * FROM wallets WHERE visitor_phone = $1 AND event_id = $2 AND status = 'ACTIVE'",
       values: [visitor_phone, event_id]
     };
     const { rows: [wallet] } = await pool.query(query);
@@ -57,9 +57,9 @@ router.get('/me', (req, res) => {
 router.get('/stall/:stall_id/menu', async (req, res) => {
   const { stall_id } = req.params;
   try {
-    const stallQuery = pool.query('SELECT stall_name FROM Stalls WHERE stall_id = $1', [stall_id]);
+    const stallQuery = pool.query('SELECT stall_name FROM stalls WHERE stall_id = $1', [stall_id]);
     const menuQuery = pool.query(
-      "SELECT item_id, item_name, price, is_veg, is_spicy, allergens FROM Menu_Items WHERE stall_id = $1 AND is_available = true ORDER BY item_name",
+      "SELECT item_id, item_name, price, is_veg, is_spicy, allergens FROM menu_items WHERE stall_id = $1 AND is_available = true ORDER BY item_name",
       [stall_id]
     );
 
@@ -96,13 +96,13 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     // 1. Verify prices and calculate total...
     const itemIds = items.map(item => item.item_id);
     const priceCheckQuery = {
-      text: `SELECT item_id, item_name, price FROM Menu_Items WHERE item_id = ANY($1::uuid[]) AND stall_id = $2 AND is_available = true`,
+      text: `SELECT item_id, item_name, price FROM menu_items WHERE item_id = ANY($1::uuid[]) AND stall_id = $2 AND is_available = true`,
       values: [itemIds, stall_id]
     };
     const { rows: dbItems } = await client.query(priceCheckQuery);
 
     let calculatedTotal = 0;
-    const validatedItems = []; // This will be used for the socket event
+    const validatedItems = [];
 
     for (const cartItem of items) {
       const dbItem = dbItems.find(i => i.item_id === cartItem.item_id);
@@ -113,17 +113,16 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
       validatedItems.push({
         ...cartItem,
         item_name: dbItem.item_name,
-        price: parseFloat(dbItem.price) // Use 'price' to match manual order
+        price: parseFloat(dbItem.price)
       });
     }
 
-    // 2. Check for sufficient funds (as a quick pre-check)
     if (parseFloat(wallet.current_balance) < calculatedTotal) {
       throw new Error('Insufficient funds. Please top-up your wallet.');
     }
 
     // 3. Get Stall's commission rate
-    const { rows: [stall] } = await client.query('SELECT commission_rate FROM Stalls WHERE stall_id = $1', [stall_id]);
+    const { rows: [stall] } = await client.query('SELECT commission_rate FROM stalls WHERE stall_id = $1', [stall_id]);
     const commission_rate = parseFloat(stall.commission_rate);
     const organizer_share = calculatedTotal * commission_rate;
     const stall_share = calculatedTotal - organizer_share;
@@ -131,25 +130,19 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     // 4. START THE ATOMIC TRANSACTION
     await client.query('BEGIN');
 
-    // 4a. --- THIS IS THE FIX ---
-    // We add "AND current_balance >= $1" to the query.
-    // This is an atomic check. If the balance is too low, the query
-    // will update 0 rows, and 'updatedWallet' will be null.
+    // 4a. Atomic balance check
     const { rows: [updatedWallet] } = await client.query(
-      "UPDATE Wallets SET current_balance = current_balance - $1 WHERE wallet_id = $2 AND current_balance >= $1 RETURNING current_balance",
+      "UPDATE wallets SET current_balance = current_balance - $1 WHERE wallet_id = $2 AND current_balance >= $1 RETURNING current_balance",
       [calculatedTotal, wallet.wallet_id]
     );
 
-    // 4b. --- THIS IS THE SECOND PART OF THE FIX ---
-    // If 'updatedWallet' is null, it means the atomic check failed.
-    // We must throw the "Insufficient funds" error.
     if (!updatedWallet) {
       throw new Error('Insufficient funds. Please top-up your wallet.');
     }
 
     // 4c. Create the Order
     const { rows: [newOrder] } = await client.query(
-      `INSERT INTO Orders (event_id, stall_id, wallet_id, total_amount, order_status, payment_type)
+      `INSERT INTO orders (event_id, stall_id, wallet_id, total_amount, order_status, payment_type)
        VALUES ($1, $2, $3, $4, 'PENDING', 'TOKEN') RETURNING order_id, created_at`,
       [event_id, stall_id, wallet.wallet_id, calculatedTotal]
     );
@@ -157,7 +150,7 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     // 4d. Insert Order Items
     const itemInsertPromises = validatedItems.map(item => {
       return client.query(
-        `INSERT INTO Order_Items (order_id, item_id, item_name, quantity, price_per_item)
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price_per_item)
          VALUES ($1, $2, $3, $4, $5)`,
         [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price]
       );
@@ -165,9 +158,8 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     await Promise.all(itemInsertPromises);
 
     // 4e. Log the Revenue Split
-    // UPDATED: Now stores the commission_rate in the transaction
     await client.query(
-      `INSERT INTO Transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
+      `INSERT INTO transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
        VALUES ($1, $2, $3, $4, $5)`,
       [newOrder.order_id, calculatedTotal, commission_rate, organizer_share, stall_share]
     );
@@ -175,12 +167,11 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     // 4f. COMMIT!
     await client.query('COMMIT');
 
-    // --- NEW: Emit socket.io event after COMMIT ---
+    // --- Emit socket.io event after COMMIT ---
     const orderForKDS = {
       order_id: newOrder.order_id,
       created_at: newOrder.created_at,
       stall_id: stall_id,
-      // Use COALESCE logic similar to the /live route
       customer_display_name: wallet.visitor_name || wallet.visitor_phone,
       total_amount: calculatedTotal,
       order_status: 'PENDING',
@@ -190,7 +181,6 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
       membership_id: wallet.membership_id
     };
     req.io.to(stall_id).emit('new_order', orderForKDS);
-    // --- End of new code ---
 
     // 5. SUCCESS!
     res.status(201).json({
@@ -203,14 +193,59 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     await client.query('ROLLBACK');
     console.error('TRANSACTION FAILED:', err.message);
     
-    // This logic now correctly catches all our "friendly" errors
     if (err.message.includes('Insufficient funds') || err.message.includes('no longer available')) {
       return res.status(400).json({ error: err.message });
     }
-    // All other errors are generic 500s
     res.status(500).json({ error: 'Payment failed. Please try again.' });
   } finally {
     client.release();
+  }
+});
+
+// === 5. GET VISITOR'S TRANSACTION LOG (Secure) ===
+router.get('/log', async (req, res) => {
+  const wallet_id = req.wallet.wallet_id;
+
+  try {
+    const query = {
+      text: `
+        -- Section 1: Get all 'TOPUP' and 'REFUND' transactions
+        SELECT
+          cl.cash_ledger_id as id,
+          cl.transaction_type,
+          cl.amount,
+          cl.created_at,
+          c.cashier_name as details
+        FROM cash_ledger cl
+        LEFT JOIN cashiers c ON cl.cashier_id = c.cashier_id
+        WHERE cl.wallet_id = $1
+
+        UNION ALL
+
+        -- Section 2: Get all 'PAYMENT' transactions
+        SELECT
+          t.transaction_id as id,
+          'PAYMENT' as transaction_type,
+          t.total_amount as amount,
+          t.created_at,
+          s.stall_name as details
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        JOIN stalls s ON o.stall_id = s.stall_id
+        WHERE o.wallet_id = $1
+
+        -- Combine and sort by date, newest first
+        ORDER BY created_at DESC;
+      `,
+      values: [wallet_id]
+    };
+
+    const { rows } = await pool.query(query);
+    res.status(200).json(rows);
+
+  } catch (err) {
+    console.error("Error fetching visitor log:", err.message);
+    res.status(500).json({ error: 'Server error fetching log' });
   }
 });
 

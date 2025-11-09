@@ -63,7 +63,7 @@ export const AuthProvider = ({ children }) => {
 
   // This is the "value" our pages will get
   const value = {
-    stall, // --- UPDATED: Expose stall object ---
+    stall, // --- UPDATED: Expose full stall object ---
     token,
     login,
     logout

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom'; // --- UPDATED ---
 import { useVisitorAuth } from '../../context/VisitorAuthContext';
 
-// --- Styling (similar to CashierLogin) ---
+// --- Styling (remains the same) ---
 const PageContainer = styled.div`
   display: flex;
   align-items: center;
@@ -86,6 +86,7 @@ const ErrorMessage = styled.p`
 export default function VisitorLoginPage() {
   const navigate = useNavigate(); 
   const [searchParams] = useSearchParams();
+  const { clubSlug } = useParams(); // --- NEW: Get club slug from URL ---
   const { login } = useVisitorAuth();
 
   const [phone, setPhone] = useState('');
@@ -100,6 +101,10 @@ export default function VisitorLoginPage() {
     const event_id_from_url = searchParams.get('event');
     const stall_id_from_url = searchParams.get('stall');
     
+    if (!clubSlug) {
+      setError("Invalid Club URL. Please scan a valid QR code.");
+    }
+
     if (event_id_from_url) {
       setEventId(event_id_from_url);
     } else {
@@ -111,7 +116,7 @@ export default function VisitorLoginPage() {
     } else {
       setError("Invalid URL: Stall ID is missing.");
     }
-  }, [searchParams]);
+  }, [searchParams, clubSlug]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -129,6 +134,7 @@ export default function VisitorLoginPage() {
       
       setLoading(false);
       // Redirect to the stall menu page, preserving the event ID
+      // The :clubSlug is NOT needed here anymore because the stall/event IDs are all globally unique
       navigate(`/v/stall/${stallId}?event=${eventId}`);
 
     } catch (err) {
@@ -164,7 +170,7 @@ export default function VisitorLoginPage() {
           
           {error && <ErrorMessage>{error}</ErrorMessage>}
 
-          <Button type="submit" disabled={loading || !eventId || !stallId}>
+          <Button type="submit" disabled={loading || !eventId || !stallId || !clubSlug}>
             {loading ? 'Logging in...' : 'Access Wallet'}
           </Button>
         </Form>

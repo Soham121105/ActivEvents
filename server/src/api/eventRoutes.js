@@ -3,16 +3,27 @@ const pool = require('../config/db');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const adminAuthMiddleware = require('../middleware/adminAuthMiddleware'); // --- NEW ---
 
-// --- TODO: PASTE YOUR REAL ADMIN ID HERE ---
-const HARDCODED_ORGANIZER_ID = "2d2ec44b-b3c8-4982-9435-283aedf63c87"; 
+// --- THIS IS THE FIX ---
+// The leaky '/public/active' route has been REMOVED.
+// It is replaced by /api/organizer/public-events/:urlSlug
+router.get('/public/active', async (req, res) => {
+  res.status(404).json({ error: 'This route is deprecated. Use /api/organizer/public-events/:clubSlug' });
+});
+
+
+// --- All routes below this are now protected ---
+router.use(adminAuthMiddleware);
+
 
 // --- Event Routes (Admin) ---
 router.get('/', async (req, res) => {
+  const organizer_id = req.organizer.id; // --- UPDATED ---
   try {
     const query = {
-      text: 'SELECT * FROM Events WHERE organizer_id = $1 ORDER BY event_date DESC',
-      values: [HARDCODED_ORGANIZER_ID],
+      text: 'SELECT * FROM events WHERE organizer_id = $1 ORDER BY event_date DESC',
+      values: [organizer_id], // --- UPDATED ---
     };
     const result = await pool.query(query);
     res.status(200).json(result.rows);
@@ -22,30 +33,16 @@ router.get('/', async (req, res) => {
   }
 });
 
-// --- NEW: PUBLIC route for Cashier Login dropdown ---
-router.get('/public/active', async (req, res) => {
-  try {
-    // Fetch events that are NOT completed.
-    const query = {
-      text: "SELECT event_id, event_name FROM Events WHERE status != 'COMPLETED' ORDER BY event_date DESC",
-    };
-    const result = await pool.query(query);
-    res.status(200).json(result.rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: 'Server error fetching active events' });
-  }
-});
-
 router.post('/', async (req, res) => {
+  const organizer_id = req.organizer.id; // --- UPDATED ---
   const { event_name, event_date } = req.body;
   if (!event_name || !event_date) {
     return res.status(400).json({ error: 'Event name and date are required.' });
   }
   try {
     const query = {
-      text: `INSERT INTO Events (organizer_id, event_name, event_date, status) VALUES ($1, $2, $3, 'DRAFT') RETURNING *;`,
-      values: [HARDCODED_ORGANIZER_ID, event_name, event_date],
+      text: `INSERT INTO events (organizer_id, event_name, event_date, status) VALUES ($1, $2, $3, 'DRAFT') RETURNING *;`,
+      values: [organizer_id, event_name, event_date], // --- UPDATED ---
     };
     const result = await pool.query(query);
     res.status(201).json(result.rows[0]);
@@ -57,13 +54,14 @@ router.post('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   const { id } = req.params; 
+  const organizer_id = req.organizer.id; // --- UPDATED ---
   try {
     const query = {
-      text: 'SELECT * FROM Events WHERE event_id = $1 AND organizer_id = $2',
-      values: [id, HARDCODED_ORGANIZER_ID],
+      text: 'SELECT * FROM events WHERE event_id = $1 AND organizer_id = $2',
+      values: [id, organizer_id], // --- UPDATED ---
     };
     const result = await pool.query(query);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Event not found' });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Event not found or unauthorized' });
     res.status(200).json(result.rows[0]);
   } catch (err) {
     console.error(err.message);
@@ -73,13 +71,13 @@ router.get('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  // Use a transaction to delete from Events and cascade
+  const organizer_id = req.organizer.id; // --- UPDATED ---
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const query = {
-      text: 'DELETE FROM Events WHERE event_id = $1 AND organizer_id = $2 RETURNING *',
-      values: [id, HARDCODED_ORGANIZER_ID],
+      text: 'DELETE FROM events WHERE event_id = $1 AND organizer_id = $2 RETURNING *',
+      values: [id, organizer_id], // --- UPDATED ---
     };
     const result = await client.query(query);
 
@@ -93,7 +91,6 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err.message);
-    // Check for foreign key violation (if cascades are not set properly)
     if (err.code === '23503') {
         return res.status(500).json({ error: 'Could not delete event. Ensure all associated data is removable.' });
     }
@@ -108,7 +105,7 @@ router.get('/:id/stalls', async (req, res) => {
   const { id: event_id } = req.params;
   try {
     const query = {
-      text: 'SELECT * FROM Stalls WHERE event_id = $1 ORDER BY stall_name',
+      text: 'SELECT * FROM stalls WHERE event_id = $1 ORDER BY stall_name',
       values: [event_id],
     };
     const result = await pool.query(query);
@@ -134,7 +131,7 @@ router.post('/:id/stalls', async (req, res) => {
 
     const query = {
       text: `
-        INSERT INTO Stalls (stall_name, owner_phone, password_hash, event_id, commission_rate)
+        INSERT INTO stalls (stall_name, owner_phone, password_hash, event_id, commission_rate)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *; 
       `,
@@ -155,7 +152,7 @@ router.delete('/:event_id/stalls/:stall_id', async (req, res) => {
   const { event_id, stall_id } = req.params;
   try {
     const query = {
-      text: 'DELETE FROM Stalls WHERE stall_id = $1 AND event_id = $2 RETURNING *',
+      text: 'DELETE FROM stalls WHERE stall_id = $1 AND event_id = $2 RETURNING *',
       values: [stall_id, event_id],
     };
     const result = await pool.query(query);
@@ -176,7 +173,7 @@ router.get('/:id/cashiers', async (req, res) => {
   const { id: event_id } = req.params;
   try {
     const query = {
-      text: 'SELECT cashier_id, event_id, cashier_name, is_active, created_at FROM Cashiers WHERE event_id = $1 ORDER BY cashier_name',
+      text: 'SELECT cashier_id, event_id, cashier_name, is_active, created_at FROM cashiers WHERE event_id = $1 ORDER BY cashier_name',
       values: [event_id],
     };
     const result = await pool.query(query);
@@ -197,7 +194,7 @@ router.post('/:id/cashiers', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPin = await bcrypt.hash(newPin, salt);
     const query = {
-      text: `INSERT INTO Cashiers (cashier_name, pin_hash, event_id, is_active) VALUES ($1, $2, $3, true) RETURNING *;`,
+      text: `INSERT INTO cashiers (cashier_name, pin_hash, event_id, is_active) VALUES ($1, $2, $3, true) RETURNING *;`,
       values: [cashier_name, hashedPin, event_id],
     };
     const { rows: [newCashier] } = await pool.query(query);
@@ -227,10 +224,10 @@ router.get('/:id/transactions', async (req, res) => {
           w.visitor_phone,
           w.visitor_name,
           w.membership_id
-        FROM Transactions t
-        JOIN Orders o ON t.order_id = o.order_id
-        JOIN Stalls s ON o.stall_id = s.stall_id
-        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        JOIN stalls s ON o.stall_id = s.stall_id
+        LEFT JOIN wallets w ON o.wallet_id = w.wallet_id
         WHERE o.event_id = $1
         ORDER BY t.created_at DESC;
       `,
@@ -256,9 +253,9 @@ router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
           SUM(t.total_amount) as total_sales,
           SUM(t.organizer_share) as total_organizer_profit,
           SUM(t.stall_share) as total_amount_owed
-        FROM Transactions t
-        JOIN Orders o ON t.order_id = o.order_id
-        JOIN Stalls s ON o.stall_id = s.stall_id
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        JOIN stalls s ON o.stall_id = s.stall_id
         WHERE o.event_id = $1 AND o.stall_id = $2
         GROUP BY s.stall_name, s.commission_rate;
       `,
@@ -277,9 +274,9 @@ router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
           w.visitor_name,
           w.visitor_phone,
           w.membership_id
-        FROM Transactions t
-        JOIN Orders o ON t.order_id = o.order_id
-        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        LEFT JOIN wallets w ON o.wallet_id = w.wallet_id
         WHERE o.event_id = $1 AND o.stall_id = $2
         ORDER BY t.created_at DESC;
       `,

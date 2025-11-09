@@ -1,8 +1,48 @@
-import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import styled, { createGlobalStyle } from 'styled-components';
+import { useAdminAuth } from './context/AdminAuthContext'; // --- NEW ---
+import axios from 'axios'; // --- NEW ---
 
-// --- This is our "white-theme" styling ---
+// --- This is our "Private Route" hook ---
+const useAdminPrivateRoute = () => {
+  const { token, logout } = useAdminAuth();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    if (!token) {
+      navigate('/admin-login');
+      return; // Stop execution if no token
+    }
+
+    // Set the token for all subsequent admin API calls
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    
+    // Add interceptor to catch 401/403 errors and log out
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      error => {
+        // Only check for admin auth errors (401/403)
+        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+          // Check if the error is from a route that *should* be admin-protected
+          const isProtectedAdminRoute = error.config.url.includes('/api/events');
+          
+          if (isProtectedAdminRoute) {
+            console.log("Admin auth error detected, logging out.");
+            logout();
+            navigate('/admin-login');
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+    
+    // Clean up interceptor on unmount
+    return () => axios.interceptors.response.eject(interceptor);
+
+  }, [token, navigate, logout]);
+};
+
 
 const GlobalStyle = createGlobalStyle`
   body {
@@ -42,20 +82,32 @@ const Sidebar = styled.nav`
   padding: 24px;
   display: flex;
   flex-direction: column;
-  /* Make sidebar sticky on mobile */
-  @media (max-width: 768px) {
-    position: fixed;
-    height: 100%;
-    /* We can add logic to hide/show it later */
-  }
 `;
 
-const LogoText = styled.div`
-  font-size: 1.5rem; /* 24px */
-  font-weight: 700;
-  color: #111827; /* gray-900 */
+// --- NEW: Club Branding Section ---
+const ClubInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 32px;
 `;
+
+const ClubLogo = styled.img`
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+`;
+
+const ClubName = styled.div`
+  font-size: 1.25rem; /* 20px */
+  font-weight: 700;
+  color: #111827; /* gray-900 */
+  line-height: 1.2;
+`;
+// --- End New ---
 
 const NavList = styled.ul`
   list-style: none;
@@ -89,45 +141,91 @@ const NavItem = styled.li`
   }
 `;
 
+// --- NEW: Footer ---
+const SidebarFooter = styled.div`
+  margin-top: auto; /* Pushes to bottom */
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+`;
+
+const LogoutButton = styled.button`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  color: #374151;
+  transition: all 0.2s;
+  background-color: #f3f4f6;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 1rem;
+  font-family: inherit;
+
+  &:hover {
+    background-color: #fee2e2;
+    color: #b91c1c;
+  }
+`;
+
+const PoweredBy = styled.div`
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: center;
+  margin-top: 16px;
+`;
+// --- End New ---
+
 const MainContent = styled.main`
   flex-grow: 1; /* This makes it take up all remaining space */
   padding: 32px 48px;
   overflow-y: auto; /* Adds scrolling just to this content area */
-  /* Add padding-left for mobile sidebar */
-  @media (max-width: 768px) {
-    padding: 16px;
-    padding-left: 256px; /* 240px sidebar + 16px padding */
-  }
 `;
 
-// --- This is our main React component ---
 
 function App() {
+  useAdminPrivateRoute(); // --- NEW: Protect this layout
+  const { admin, logout } = useAdminAuth(); // --- NEW: Get auth functions
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/admin-login');
+  };
+
   return (
     <AppLayout>
       <GlobalStyle />
       
       <Sidebar>
-        <LogoText>ActivEvents</LogoText>
+        {/* --- NEW: Club Branding --- */}
+        <ClubInfo>
+          {admin?.logo_url && <ClubLogo src={admin.logo_url} alt="Club Logo" />}
+          <ClubName>{admin?.name || 'ActivEvents'}</ClubName>
+        </ClubInfo>
         
         <NavList>
-          {/* This is a "NavLink" to our dashboard (home page). */}
           <NavItem>
             <NavLink to="/">
-              {/* We can add an SVG icon here later */}
               Dashboard
             </NavLink>
           </NavItem>
-          
-          {/* --- THIS IS THE CHANGE ---
-            We have REMOVED the "Stalls" link from the main sidebar.
-            Stalls are now managed *inside* an Event.
-          */}
-
         </NavList>
+
+        {/* --- NEW: Footer with Logout and Branding --- */}
+        <SidebarFooter>
+          <LogoutButton onClick={handleLogout}>
+            Logout
+          </LogoutButton>
+          <PoweredBy>
+            Powered by ActivEvents
+          </PoweredBy>
+        </SidebarFooter>
       </Sidebar>
       
-      {/* This is the main content area where our pages will load */}
       <MainContent>
         <Outlet />
       </MainContent>

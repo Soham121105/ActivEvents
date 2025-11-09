@@ -1,5 +1,5 @@
 const express = require('express');
-const pool = require('../config/db');
+const pool = require('../config/db'); // --- FIX ---
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
   try {
     const stallId = req.stall.id; 
     const query = {
-      text: 'SELECT * FROM Menu_Items WHERE stall_id = $1 ORDER BY item_name',
+      text: 'SELECT * FROM menu_items WHERE stall_id = $1 ORDER BY item_name',
       values: [stallId],
     };
     const result = await pool.query(query);
@@ -36,7 +36,7 @@ router.post('/', async (req, res) => {
   try {
     const query = {
       text: `
-        INSERT INTO Menu_Items 
+        INSERT INTO menu_items 
           (stall_id, item_name, price, is_veg, is_spicy, allergens, is_available)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *; 
@@ -64,7 +64,7 @@ router.put('/:id/stock', async (req, res) => {
   try {
     const query = {
       text: `
-        UPDATE Menu_Items
+        UPDATE menu_items
         SET is_available = $1
         WHERE item_id = $2 AND stall_id = $3
         RETURNING *;
@@ -93,12 +93,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const query = {
       text: `
-        DELETE FROM Menu_Items
+        DELETE FROM menu_items
         WHERE item_id = $1 AND stall_id = $2
         RETURNING *;
       `,
-      // We include "stall_id = $2" for security
-      // to ensure a stall can *only* delete *their own* items.
       values: [itemId, stallId],
     };
     const result = await pool.query(query);
@@ -107,11 +105,9 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Menu item not found or you do not have permission' });
     }
     
-    // Send back a success message
     res.status(200).json({ message: 'Item deleted successfully' }); 
   } catch (err) {
     console.error(err.message);
-    // Handle foreign key constraint error (if order item deletion is RESTRICTED)
     if (err.code === '23503') {
       return res.status(400).json({ error: 'Cannot delete item: It is part of an existing order. Please mark as "Sold Out" instead.' });
     }

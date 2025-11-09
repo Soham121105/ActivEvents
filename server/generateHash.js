@@ -2,7 +2,7 @@
 const bcrypt = require('bcryptjs');
 
 // The PIN we want to hash
-const pin = '1234';
+const pin = 'a1sh11N';
 const saltRounds = 10;
 
 console.log(`Hashing PIN: "${pin}" ...`);

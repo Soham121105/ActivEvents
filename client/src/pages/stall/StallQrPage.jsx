@@ -1,9 +1,9 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../../context/AuthContext';
-import QRCode from 'react-qr-code'; // --- NEW: Import the library ---
+import QRCode from 'react-qr-code'; 
 
-// --- NEW: Styling ---
+// --- Styling ---
 const PageHeader = styled.h1`
   font-size: 2.25rem;
   font-weight: 800;
@@ -27,38 +27,36 @@ const InfoText = styled.p`
   max-width: 500px;
   line-height: 1.6;
 `;
+// --- End Styling ---
 
 export default function StallQrPage() {
-  // --- NEW: Get stall info from auth ---
-  const { stall } = useAuth();
-  
+  // Get the FULL stall object, which now includes url_slug
+  const { stall } = useAuth(); 
+
   if (!stall) {
     return <PageHeader>Loading...</PageHeader>;
   }
-
-  // 1. Construct the URL for the visitor app
-  // This URL will open the visitor login page,
-  // pre-filled with this stall's event_id and stall_id.
-  const qrUrl = `${window.location.origin}/v/login?event=${stall.event_id}&stall=${stall.id}`;
+  
+  // --- THE PERMANENT FIX ---
+  // We use the stall's own url_slug from its auth token.
+  // This will ALWAYS be correct, regardless of who is logged in.
+  const qrUrl = `${window.location.origin}/${stall.url_slug}/v/login?event=${stall.event_id}&stall=${stall.id}`;
 
 
   return (
     <div>
       <PageHeader>Visitor QR Code</PageHeader>
       <InfoText>
-        Ask customers to scan this QR code with their phone. It will take them
-        to your menu where they can log in and pay with their wallet.
+        Ask customers to scan this QR code. It will take them directly to your
+        menu for this specific event.
       </InfoText>
       
-      {/* --- NEW: Render the QR Code --- */}
       <QrContainer>
         <QRCode value={qrUrl} size={256} />
       </QrContainer>
       
       <InfoText style={{marginTop: '16px', fontSize: '0.875rem', color: '#6b7280'}}>
-        <strong>Stall:</strong> {stall.name} <br />
-        <strong>Event ID:</strong> {stall.event_id} <br />
-        <strong>Your URL:</strong> <a href={qrUrl} target="_blank" rel="noopener noreferrer">{qrUrl}</a>
+        <strong>URL:</strong> <a href={qrUrl} target="_blank" rel="noopener noreferrer">{qrUrl}</a>
       </InfoText>
     </div>
   );

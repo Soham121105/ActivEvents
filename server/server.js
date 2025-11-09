@@ -1,10 +1,9 @@
-// 1. Load .env AT THE VERY TOP, ONLY ONCE
-require('dotenv').config(); 
+// 1. Load .env by requiring the db config FIRST
+const pool = require('./src/config/db'); 
 
 // 2. Import modules
 const express = require('express');
 const cors = require('cors');
-const pool = require('./src/config/db'); // Import our pool
 
 // --- NEW SOCKET.IO IMPORTS ---
 const http = require('http'); // We need the http module
@@ -17,6 +16,7 @@ const menuRoutes = require('./src/api/menuRoutes');
 const cashierRoutes = require('./src/api/cashierRoutes');
 const visitorRoutes = require('./src/api/visitorRoutes');
 const orderRoutes = require('./src/api/orderRoutes');
+const organizerRoutes = require('./src/api/organizerRoutes'); // --- NEW ---
 
 // 4. Initialize app
 const app = express();
@@ -42,6 +42,7 @@ app.use((req, res, next) => {
 });
 
 // 6. Setup Our API Routes
+app.use('/api/organizer', organizerRoutes); // --- NEW ---
 app.use('/api/events', eventRoutes); 
 app.use('/api/stalls', stallRoutes); 
 app.use('/api/menu', menuRoutes); 

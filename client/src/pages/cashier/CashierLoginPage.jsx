@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom'; // --- UPDATED ---
 import { useCashierAuth } from '../../context/CashierAuthContext';
 
-// --- Styling (White & Purple Theme) ---
+// --- Styling (remains the same) ---
 const PageContainer = styled.div`
   display: flex; align-items: center; justify-content: center;
   min-height: 100vh; background-color: #f9fafb;
@@ -47,26 +47,47 @@ const Button = styled.button`
 const ErrorMessage = styled.p`
   font-size: 0.875rem; color: #ef4444; text-align: center; margin: 0;
 `;
+// --- End of Styling ---
 
 export default function CashierLoginPage() {
   const navigate = useNavigate(); 
   const { login } = useCashierAuth();
+  const { clubSlug } = useParams(); // --- NEW: Get club slug from URL ---
+
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [cashierName, setCashierName] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Set to true initially
 
-  // Fetch active events on load
+  // Fetch active events for THIS CLUB on load
   useEffect(() => {
-    axios.get('http://localhost:3001/api/events/public/active')
+    if (!clubSlug) {
+      setError("Invalid club URL.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    // --- UPDATED: Call the new, secure API endpoint ---
+    axios.get(`http://localhost:3001/api/organizer/public-events/${clubSlug}`)
       .then(res => {
         setEvents(res.data);
-        if (res.data.length > 0) setSelectedEventId(res.data[0].event_id);
+        if (res.data.length > 0) {
+          setSelectedEventId(res.data[0].event_id);
+        } else {
+          setError("No active events found for this club.");
+        }
       })
-      .catch(err => console.error("Failed to fetch events", err));
-  }, []);
+      .catch(err => {
+        console.error("Failed to fetch events", err);
+        setError("Could not load active events for this club.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [clubSlug]); // Re-run if clubSlug changes
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -101,8 +122,10 @@ export default function CashierLoginPage() {
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
               required
+              disabled={loading || events.length === 0}
             >
-              {events.length === 0 && <option>Loading active events...</option>}
+              {loading && <option>Loading events...</option>}
+              {!loading && events.length === 0 && <option>No events found</option>}
               {events.map(ev => (
                 <option key={ev.event_id} value={ev.event_id}>{ev.event_name}</option>
               ))}

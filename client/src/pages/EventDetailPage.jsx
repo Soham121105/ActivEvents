@@ -97,7 +97,6 @@ const ItemDetails = styled.span`
   color: #6b7280;
 `;
 
-// --- NEW: Delete button for list items ---
 const ItemDeleteButton = styled.button`
   background: none;
   border: none;
@@ -115,7 +114,7 @@ const ItemDeleteButton = styled.button`
 // --- End of new styles ---
 
 export default function EventDetailPage() {
-  const { id } = useParams();
+  const { id } = useParams(); // This is the eventId
 
   const [event, setEvent] = useState(null);
   const [stalls, setStalls] = useState([]);
@@ -126,6 +125,9 @@ export default function EventDetailPage() {
   const fetchData = async () => {
     try {
       setLoading(true); // Ensure loading is true on refetch
+      // Set the auth token for admin routes
+      axios.defaults.headers.common['Authorization'] = `Bearer ${localStorage.getItem('admin_token')}`;
+      
       const [eventRes, stallsRes, cashiersRes] = await Promise.all([
         axios.get(`http://localhost:3001/api/events/${id}`),
         axios.get(`http://localhost:3001/api/events/${id}/stalls`),
@@ -137,7 +139,7 @@ export default function EventDetailPage() {
       setCashiers(cashiersRes.data);
     } catch (err) {
       console.error("Error fetching event data:", err);
-      setError("Failed to fetch event data.");
+      setError("Failed to fetch event data. You may be logged out.");
     } finally {
       setLoading(false);
     }
@@ -147,7 +149,6 @@ export default function EventDetailPage() {
     fetchData();
   }, [id]);
 
-  // --- NEW: Delete Stall Handler ---
   const handleDeleteStall = async (stallId) => {
     if (!window.confirm("Are you sure you want to delete this stall?\nAll its data (menu, orders, etc.) will be lost.")) {
       return;
@@ -162,6 +163,23 @@ export default function EventDetailPage() {
       alert("Failed to delete stall.");
     }
   };
+  
+  const handleDeleteCashier = async (cashierId) => {
+    if (!window.confirm("Are you sure you want to delete this cashier?")) {
+      return;
+    }
+    
+    try {
+      // NOTE: You must add this API route to eventRoutes.js to make this work:
+      // router.delete('/:event_id/cashiers/:cashier_id', ...)
+      await axios.delete(`http://localhost:3001/api/events/${id}/cashiers/${cashierId}`);
+      setCashiers(prevCashiers => prevCashiers.filter(c => c.cashier_id !== cashierId));
+    } catch (err) {
+      console.error("Error deleting cashier:", err);
+      alert("Failed to delete cashier. (API endpoint might be missing)");
+    }
+  }
+
 
   if (loading) {
     return <LoadingText>Loading event details...</LoadingText>;
@@ -192,14 +210,14 @@ export default function EventDetailPage() {
             stalls.map((stall) => (
               <ListItem key={stall.stall_id}>
                 <div>
-                  <Link to={`/stall/${stall.stall_id}/sales`}> {/* This link doesn't exist yet, but we'll build it in 4.3 */}
+                  {/* UPDATED LINK to the new finance page */}
+                  <Link to={`/event/${id}/stall/${stall.stall_id}/finance`}>
                     <ItemName>{stall.stall_name}</ItemName>
                   </Link>
                   <ItemDetails style={{display: 'block', marginTop: '4px'}}>
-                    {stall.owner_phone}
+                    Phone: {stall.owner_phone} | Commission: {(stall.commission_rate * 100).toFixed(0)}%
                   </ItemDetails>
                 </div>
-                {/* --- NEW: Delete button for each stall --- */}
                 <ItemDeleteButton onClick={() => handleDeleteStall(stall.stall_id)}>
                   Delete
                 </ItemDeleteButton>
@@ -224,10 +242,17 @@ export default function EventDetailPage() {
           ) : (
             cashiers.map((cashier) => (
               <ListItem key={cashier.cashier_id}>
-                <ItemName>{cashier.cashier_name}</ItemName>
-                <ItemDetails>
-                  PIN: ****
-                </ItemDetails>
+                <div>
+                  <ItemName>{cashier.cashier_name}</ItemName>
+                  <ItemDetails style={{display: 'block', marginTop: '4px'}}>
+                    Status: {cashier.is_active ? 'Active' : 'Inactive'}
+                  </ItemDetails>
+                </div>
+                {/* --- THIS WAS THE BUG FIX --- */}
+                <ItemDeleteButton onClick={() => handleDeleteCashier(cashier.cashier_id)}>
+                  Delete
+                </ItemDeleteButton>
+                {/* --- END OF BUG FIX --- */}
               </ListItem>
             ))
           )}

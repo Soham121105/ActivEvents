@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom'; // --- UPDATED ---
 import { useAuth } from '../context/AuthContext';
 
-// --- Styling (Matched to Cashier Login) ---
+// --- Styling (remains the same) ---
 const PageContainer = styled.div`
   display: flex; align-items: center; justify-content: center;
   min-height: 100vh; background-color: #f9fafb;
@@ -56,33 +56,42 @@ const ErrorMessage = styled.p`
 export default function StallLoginPage() {
   const navigate = useNavigate(); 
   const { login } = useAuth();
+  const { clubSlug } = useParams(); // --- NEW: Get club slug from URL ---
 
-  // --- NEW: Logic copied from Cashier Login ---
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Set to true initially
 
-  // Fetch active events on page load
+  // Fetch active events for THIS CLUB on page load
   useEffect(() => {
+    if (!clubSlug) {
+      setError("Invalid club URL.");
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
-    axios.get('http://localhost:3001/api/events/public/active')
+    // --- UPDATED: Call the new, secure API endpoint ---
+    axios.get(`http://localhost:3001/api/organizer/public-events/${clubSlug}`)
       .then(res => {
         setEvents(res.data);
         if (res.data.length > 0) {
           setSelectedEventId(res.data[0].event_id); // Default to the first event
+        } else {
+          setError("No active events found for this club.");
         }
       })
       .catch(err => {
         console.error("Failed to fetch events", err);
-        setError("Could not load active events.");
+        setError("Could not load active events for this club.");
       })
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [clubSlug]); // Re-run if clubSlug changes
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -119,15 +128,13 @@ export default function StallLoginPage() {
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
               required
-              disabled={events.length === 0}
+              disabled={loading || events.length === 0}
             >
-              {events.length === 0 ? (
-                <option>Loading active events...</option>
-              ) : (
-                events.map(ev => (
-                  <option key={ev.event_id} value={ev.event_id}>{ev.event_name}</option>
-                ))
-              )}
+              {loading && <option>Loading events...</option>}
+              {!loading && events.length === 0 && <option>No events found</option>}
+              {events.map(ev => (
+                <option key={ev.event_id} value={ev.event_id}>{ev.event_name}</option>
+              ))}
             </Select>
           </InputGroup>
 

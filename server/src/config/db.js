@@ -28,4 +28,3 @@ const pool = new Pool({
 
 // We export the 'pool' object so our other files (like eventRoutes.js) can use it.
 module.exports = pool;
-

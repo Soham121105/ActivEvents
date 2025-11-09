@@ -7,19 +7,28 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 /**
  * [POST] /api/stalls/login
- * This is our new "SMART LOGIN" - IT NOW REQUIRES AN event_id
+ * UPDATED: Now joins organizers to get the url_slug
  */
 router.post('/login', async (req, res) => {
-  // --- 1. IT NOW REQUIRES event_id ---
   const { phone, password, event_id } = req.body;
   if (!phone || !password || !event_id) {
     return res.status(400).json({ error: 'Phone, password, and event are required' });
   }
 
   try {
-    // --- 2. Find the SPECIFIC stall ---
+    // --- UPDATED QUERY ---
+    // Join with events and organizers to get the club's url_slug
     const query = {
-      text: 'SELECT * FROM Stalls WHERE owner_phone = $1 AND event_id = $2',
+      text: `
+        SELECT 
+          s.stall_id, s.stall_name, s.owner_phone, s.event_id, 
+          s.commission_rate, s.password_hash,
+          o.url_slug 
+        FROM stalls s
+        JOIN events e ON s.event_id = e.event_id
+        JOIN organizers o ON e.organizer_id = o.organizer_id
+        WHERE s.owner_phone = $1 AND s.event_id = $2
+      `,
       values: [phone, event_id],
     };
     const result = await pool.query(query);
@@ -29,30 +38,33 @@ router.post('/login', async (req, res) => {
     }
     const stall = result.rows[0];
 
-    // 3. Check the password
+    // Check the password
     const isMatch = await bcrypt.compare(password, stall.password_hash);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // 4. Create the "Smart" JWT
+    // --- UPDATED PAYLOAD ---
+    // The stall's token now knows its club's public URL
     const payload = {
       stall: {
         id: stall.stall_id,
         name: stall.stall_name,
         phone: stall.owner_phone,
         event_id: stall.event_id, 
-        commission_rate: stall.commission_rate
+        commission_rate: stall.commission_rate,
+        url_slug: stall.url_slug // <--- THIS IS THE PERMANENT FIX
       }
     };
 
-    // 5. Sign and send the token
+    // Sign and send the token
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
       { expiresIn: '24h' },
       (err, token) => {
         if (err) throw err;
+        // Send the full stall object to the frontend auth context
         res.status(200).json({ token, stall: payload.stall }); 
       }
     );
@@ -79,8 +91,8 @@ router.get('/transactions', async (req, res) => {
         SELECT
           SUM(t.total_amount) as total_sales,
           SUM(t.stall_share) as your_earnings
-        FROM Transactions t
-        JOIN Orders o ON t.order_id = o.order_id
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
         WHERE o.stall_id = $1
       `,
       values: [stall_id],
@@ -99,9 +111,9 @@ router.get('/transactions', async (req, res) => {
           w.visitor_name,
           w.visitor_phone,
           w.membership_id
-        FROM Transactions t
-        JOIN Orders o ON t.order_id = o.order_id
-        LEFT JOIN Wallets w ON o.wallet_id = w.wallet_id
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        LEFT JOIN wallets w ON o.wallet_id = w.wallet_id
         WHERE o.stall_id = $1
         ORDER BY t.created_at DESC;
       `,
