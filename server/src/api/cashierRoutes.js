@@ -97,13 +97,14 @@ router.post('/check-balance', async (req, res) => {
 
 /**
  * [GET] /api/cashier/log
- * Fetches the personal transaction log for the logged-in cashier
+ * UPDATED: Now fetches summary data alongside the log
  */
 router.get('/log', async (req, res) => {
   const cashier_id = req.cashier.id;
 
   try {
-    const query = {
+    // 1. Query for the detailed log
+    const logQuery = pool.query({
       text: `
         SELECT 
           cl.cash_ledger_id, 
@@ -117,10 +118,28 @@ router.get('/log', async (req, res) => {
         ORDER BY cl.created_at DESC;
       `,
       values: [cashier_id],
-    };
+    });
 
-    const { rows } = await pool.query(query);
-    res.status(200).json(rows);
+    // 2. Query for the summary
+    const summaryQuery = pool.query({
+      text: `
+        SELECT
+          COALESCE(SUM(CASE WHEN transaction_type = 'TOPUP' THEN amount ELSE 0 END), 0) AS total_topups,
+          COALESCE(SUM(CASE WHEN transaction_type = 'REFUND' THEN amount ELSE 0 END), 0) AS total_refunds
+        FROM Cash_Ledger
+        WHERE cashier_id = $1;
+      `,
+      values: [cashier_id],
+    });
+
+    // 3. Run both in parallel
+    const [logResult, summaryResult] = await Promise.all([logQuery, summaryQuery]);
+
+    // 4. Combine into one response
+    res.status(200).json({
+      logs: logResult.rows,
+      summary: summaryResult.rows[0] // Contains { total_topups, total_refunds }
+    });
 
   } catch (err) {
     console.error(err.message);
@@ -157,8 +176,9 @@ router.post('/topup', async (req, res) => {
         ON CONFLICT (event_id, visitor_phone)
         DO UPDATE SET
           current_balance = Wallets.current_balance + $3,
-          visitor_name = $4,
-          membership_id = $5
+          status = 'ACTIVE', -- Reactivate an 'ENDED' wallet if they top-up again
+          visitor_name = COALESCE($4, Wallets.visitor_name),
+          membership_id = COALESCE($5, Wallets.membership_id)
         RETURNING *;
       `,
       values: [event_id, visitor_phone, amount, visitor_name || null, membership_id || null],
@@ -217,7 +237,7 @@ router.post('/refund', async (req, res) => {
     const { rows: [wallet] } = await client.query(getWalletQuery);
 
     if (!wallet) {
-      return res.status(44).json({ error: 'Active wallet not found' });
+      return res.status(404).json({ error: 'Active wallet not found' });
     }
 
     const refundAmount = parseFloat(wallet.current_balance);

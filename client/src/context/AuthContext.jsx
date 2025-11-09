@@ -19,15 +19,18 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     // This runs ONCE when the app loads
     const storedToken = localStorage.getItem('stall_token');
+    const storedStall = localStorage.getItem('stall_data'); // --- NEW ---
     
     if (storedToken) {
       // If we have a token, set it on axios
       axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
       setToken(storedToken);
       
-      // We will add a "GET /api/stalls/me" route later
-      // to fetch the stall's data on page load.
-      // For now, we'll just set loading to false.
+      // --- NEW: Load stall data from local storage ---
+      if (storedStall) {
+        setStall(JSON.parse(storedStall));
+      }
+      
       setLoading(false);
       
     } else {
@@ -39,6 +42,7 @@ export const AuthProvider = ({ children }) => {
   const login = (stallData, token) => {
     // 1. Save data to storage and state
     localStorage.setItem('stall_token', token);
+    localStorage.setItem('stall_data', JSON.stringify(stallData)); // --- NEW ---
     setToken(token);
     setStall(stallData);
     
@@ -49,6 +53,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     // 1. Clear data from storage and state
     localStorage.removeItem('stall_token');
+    localStorage.removeItem('stall_data'); // --- NEW ---
     setToken(null);
     setStall(null);
     
@@ -58,7 +63,7 @@ export const AuthProvider = ({ children }) => {
 
   // This is the "value" our pages will get
   const value = {
-    stall,
+    stall, // --- UPDATED: Expose stall object ---
     token,
     login,
     logout

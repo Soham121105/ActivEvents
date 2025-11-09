@@ -73,20 +73,33 @@ router.get('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
+  // Use a transaction to delete from Events and cascade
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const query = {
       text: 'DELETE FROM Events WHERE event_id = $1 AND organizer_id = $2 RETURNING *',
       values: [id, HARDCODED_ORGANIZER_ID],
     };
-    const result = await pool.query(query);
+    const result = await client.query(query);
 
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Event not found or unauthorized' });
     }
+    
+    await client.query('COMMIT');
     res.status(200).json({ message: 'Event and all associated data deleted' });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err.message);
+    // Check for foreign key violation (if cascades are not set properly)
+    if (err.code === '23503') {
+        return res.status(500).json({ error: 'Could not delete event. Ensure all associated data is removable.' });
+    }
     res.status(500).json({ error: 'Server error while deleting event' });
+  } finally {
+    client.release();
   }
 });
 
@@ -163,7 +176,7 @@ router.get('/:id/cashiers', async (req, res) => {
   const { id: event_id } = req.params;
   try {
     const query = {
-      text: 'SELECT * FROM Cashiers WHERE event_id = $1 ORDER BY cashier_name',
+      text: 'SELECT cashier_id, event_id, cashier_name, is_active, created_at FROM Cashiers WHERE event_id = $1 ORDER BY cashier_name',
       values: [event_id],
     };
     const result = await pool.query(query);
@@ -191,6 +204,7 @@ router.post('/:id/cashiers', async (req, res) => {
     res.status(201).json({ ...newCashier, temp_pin: newPin });
   } catch (err) {
     console.error(err.message);
+    if (err.code === '23505') return res.status(400).json({ error: 'Cashier name already exists in this event.' });
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -207,6 +221,7 @@ router.get('/:id/transactions', async (req, res) => {
           t.total_amount,
           t.organizer_share,
           t.stall_share,
+          t.commission_rate,
           t.created_at,
           s.stall_name,
           w.visitor_phone,

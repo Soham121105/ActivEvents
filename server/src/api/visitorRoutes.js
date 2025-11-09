@@ -102,7 +102,7 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     const { rows: dbItems } = await client.query(priceCheckQuery);
 
     let calculatedTotal = 0;
-    const validatedItems = [];
+    const validatedItems = []; // This will be used for the socket event
 
     for (const cartItem of items) {
       const dbItem = dbItems.find(i => i.item_id === cartItem.item_id);
@@ -113,7 +113,7 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
       validatedItems.push({
         ...cartItem,
         item_name: dbItem.item_name,
-        price_per_item: parseFloat(dbItem.price)
+        price: parseFloat(dbItem.price) // Use 'price' to match manual order
       });
     }
 
@@ -159,12 +159,13 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
       return client.query(
         `INSERT INTO Order_Items (order_id, item_id, item_name, quantity, price_per_item)
          VALUES ($1, $2, $3, $4, $5)`,
-        [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price_per_item]
+        [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price]
       );
     });
     await Promise.all(itemInsertPromises);
 
     // 4e. Log the Revenue Split
+    // UPDATED: Now stores the commission_rate in the transaction
     await client.query(
       `INSERT INTO Transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -173,6 +174,23 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
 
     // 4f. COMMIT!
     await client.query('COMMIT');
+
+    // --- NEW: Emit socket.io event after COMMIT ---
+    const orderForKDS = {
+      order_id: newOrder.order_id,
+      created_at: newOrder.created_at,
+      stall_id: stall_id,
+      // Use COALESCE logic similar to the /live route
+      customer_display_name: wallet.visitor_name || wallet.visitor_phone,
+      total_amount: calculatedTotal,
+      order_status: 'PENDING',
+      payment_type: 'TOKEN',
+      items: validatedItems,
+      visitor_phone: wallet.visitor_phone,
+      membership_id: wallet.membership_id
+    };
+    req.io.to(stall_id).emit('new_order', orderForKDS);
+    // --- End of new code ---
 
     // 5. SUCCESS!
     res.status(201).json({
@@ -195,6 +213,5 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     client.release();
   }
 });
-
 
 module.exports = router;

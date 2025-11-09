@@ -112,7 +112,7 @@ router.post('/manual', async (req, res) => {
     };
     
     // We will emit the socket.io event here later
-    // req.io.to(stallId).emit('new_order', finalOrder);
+    req.io.to(stallId).emit('new_order', finalOrder);
 
     res.status(201).json(finalOrder);
 
@@ -147,7 +147,7 @@ router.post('/:id/complete', async (req, res) => {
     }
 
     // We will emit the socket.io event here later
-    // req.io.to(stallId).emit('remove_order', orderId);
+    req.io.to(stallId).emit('remove_order', orderId);
 
     res.status(200).json(updatedOrder);
   } catch (err) {
@@ -155,43 +155,10 @@ router.post('/:id/complete', async (req, res) => {
     res.status(500).json({ error: 'Server error while completing order' });
   }
 });
-const jwt = require('jsonwebtoken');
-// We have REMOVED the "require('dotenv').config()" line.
-// This is correct, because 'server.js' already loaded it.
 
-// This is our "gatekeeper" function
-module.exports = function(req, res, next) {
-  // 1. Get the token from the request header
-  const authHeader = req.header('Authorization');
-  
-  if (!authHeader) {
-    return res.status(401).json({ error: 'No token, authorization denied' });
-  }
-
-  // 2. Check if the token is valid
-  try {
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'Token is not valid' });
-    }
-
-    // 3. Verify the token
-    // This will now work, because process.env.JWT_SECRET was loaded by server.js
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // 4. Attach the 'stall' info to the request
-    req.stall = decoded.stall; 
-    
-    // 5. Continue
-    next(); 
-
-  } catch (err) {
-    console.error('Token verification failed:', err.message);
-    // 6. --- THIS IS THE FIX ---
-    // We must RETURN after sending the error to stop execution
-    return res.status(401).json({ error: 'Token is not valid' });
-  }
-};
-
+// --- THIS IS THE FIX ---
+// The incorrect authMiddleware function was here. It has been removed.
+// The only export from this file should be the router.
+// --- END OF FIX ---
 
 module.exports = router;

@@ -82,7 +82,6 @@ router.put('/:id/stock', async (req, res) => {
   }
 });
 
-// --- 1. ADD THIS NEW "DELETE" ROUTE ---
 /**
  * [DELETE] /api/menu/:id
  * Delete a menu item
@@ -112,6 +111,10 @@ router.delete('/:id', async (req, res) => {
     res.status(200).json({ message: 'Item deleted successfully' }); 
   } catch (err) {
     console.error(err.message);
+    // Handle foreign key constraint error (if order item deletion is RESTRICTED)
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Cannot delete item: It is part of an existing order. Please mark as "Sold Out" instead.' });
+    }
     res.status(500).json({ error: 'Server error while deleting item' });
   }
 });

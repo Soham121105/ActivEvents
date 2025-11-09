@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import io from 'socket.io-client'; // --- NEW: Import socket.io-client ---
 
 // --- Styling ---
 const PageHeader = styled.h1`
@@ -103,8 +104,11 @@ const ItemPrice = styled.span`
   font-size: 1rem; font-weight: 500; color: #6b7280;
 `;
 
+// --- NEW: Define the socket connection ---
+const socket = io('http://localhost:3001');
+
 export default function StallPosPage() {
-  const { logout } = useAuth();
+  const { logout, stall } = useAuth(); // --- UPDATED: Get the stall object
   const navigate = useNavigate();
   
   // State for KDS (Live Orders)
@@ -127,7 +131,8 @@ export default function StallPosPage() {
 
   // --- 1. KDS (LIVE ORDERS) LOGIC ---
   useEffect(() => {
-    const fetchLiveOrders = async () => {
+    // Function to fetch initial orders on load
+    const fetchInitialOrders = async () => {
       try {
         const response = await axios.get('http://localhost:3001/api/orders/live');
         setLiveOrders(response.data);
@@ -138,15 +143,39 @@ export default function StallPosPage() {
       }
     };
     
-    fetchLiveOrders(); // Fetch on load
-    const pollInterval = setInterval(fetchLiveOrders, 5000); // Poll every 5 sec
-    return () => clearInterval(pollInterval);
-  }, [logout, navigate]);
+    fetchInitialOrders(); // Fetch on load
+
+    // --- NEW: Socket.io logic ---
+    if (stall && stall.id) {
+      // 1. Join the stall-specific room
+      socket.emit('join_stall_room', stall.id);
+
+      // 2. Listen for new orders
+      socket.on('new_order', (newOrder) => {
+        // Add new order to the top of the list
+        setLiveOrders((prevOrders) => [newOrder, ...prevOrders]);
+      });
+
+      // 3. Listen for completed orders
+      socket.on('remove_order', (orderId) => {
+        setLiveOrders((prevOrders) => prevOrders.filter(o => o.order_id !== orderId));
+      });
+    }
+
+    // Clean up listeners when component unmounts
+    return () => {
+      socket.off('new_order');
+      socket.off('remove_order');
+    };
+    // --- END OF SOCKET.IO LOGIC ---
+
+  }, [stall, logout, navigate]); // Add 'stall' as a dependency
 
   const handleCompleteOrder = async (orderId) => {
     try {
+      // This API call now triggers the 'remove_order' socket event
       await axios.post(`http://localhost:3001/api/orders/${orderId}/complete`);
-      setLiveOrders((prev) => prev.filter(o => o.order_id !== orderId));
+      // We no longer need to manually filter state here
     } catch (err) {
       handleApiError(err, () => alert("Failed to complete order."));
     }
@@ -179,11 +208,11 @@ export default function StallPosPage() {
       <PosLayout>
         {/* --- LEFT COLUMN: LIVE VISITOR ORDERS (KDS) --- */}
         <Column>
-          <ColumnHeader>Live Visitor Orders</ColumnHeader>
+          <ColumnHeader>Incoming Orders</ColumnHeader>
           <ContentArea>
             {kdsError && <p style={{color: 'red'}}>{kdsError}</p>}
             {liveOrders.length === 0 && !kdsError && (
-              <p style={{padding: '0 8px', color: '#6b7280'}}>No pending visitor orders. New orders will appear here.</p>
+              <p style={{padding: '0 8px', color: '#6b7280'}}>No pending orders. New orders will appear here in real-time.</p>
             )}
             {liveOrders.map((order) => (
               <OrderCard key={order.order_id}>

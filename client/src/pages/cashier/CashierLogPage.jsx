@@ -89,7 +89,46 @@ const BackLink = styled(Link)`
   &:hover { text-decoration: underline; }
 `;
 
-// --- NEW Styling for the Transaction List ---
+// --- NEW: Add Stat Card Styling ---
+const StatsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 800px;
+  
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const StatCard = styled.div`
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+`;
+
+const StatValue = styled.p`
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 8px 0;
+  
+  &.positive { color: #16a34a; } /* green-600 */
+  &.negative { color: #dc2626; } /* red-600 */
+  &.net { color: #7c3aed; } /* purple-600 */
+`;
+
+const StatLabel = styled.p`
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin: 0;
+`;
+
+// --- Styling for the Transaction List ---
 const TransactionList = styled.ul`
   list-style: none;
   padding: 0;
@@ -139,7 +178,8 @@ export default function CashierLogPage() {
   const { logout, cashier } = useCashierAuth();
   const navigate = useNavigate();
 
-  const [logs, setLogs] = useState([]);
+  // --- UPDATED: State to hold both summary and logs ---
+  const [data, setData] = useState({ summary: null, logs: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -147,7 +187,7 @@ export default function CashierLogPage() {
     const fetchLogs = async () => {
       try {
         const response = await axios.get('http://localhost:3001/api/cashier/log');
-        setLogs(response.data);
+        setData(response.data); // Set the entire object { summary, logs }
       } catch (err) {
         setError('Failed to fetch transaction log.');
       } finally {
@@ -169,6 +209,12 @@ export default function CashierLogPage() {
     return `${d}, ${t}`;
   };
 
+  // --- NEW: Helper function ---
+  const formatCurrency = (val) => `₹${parseFloat(val || 0).toFixed(2)}`;
+
+  // --- NEW: Calculate net total ---
+  const netCash = (data.summary?.total_topups || 0) - (data.summary?.total_refunds || 0);
+
   return (
     <PageContainer>
       <Header>
@@ -182,13 +228,40 @@ export default function CashierLogPage() {
       </Header>
       
       <MainContent>
+        {/* --- NEW: StatsGrid for Summary --- */}
+        {loading ? (
+            <p>Loading summary...</p>
+        ) : data.summary && (
+          <StatsGrid>
+            <StatCard>
+              <StatValue className="positive">
+                {formatCurrency(data.summary.total_topups)}
+              </StatValue>
+              <StatLabel>Total Top-ups</StatLabel>
+            </StatCard>
+            <StatCard>
+              <StatValue className="negative">
+                -{formatCurrency(data.summary.total_refunds)}
+              </StatValue>
+              <StatLabel>Total Refunds</StatLabel>
+            </StatCard>
+            <StatCard>
+              <StatValue className="net">
+                {formatCurrency(netCash)}
+              </StatValue>
+              <StatLabel>Net Cash Collected</StatLabel>
+            </StatCard>
+          </StatsGrid>
+        )}
+        
         <LogContainer>
           <SectionTitle>My Transaction Log</SectionTitle>
           {loading && <p>Loading log...</p>}
           {error && <p style={{color: 'red'}}>{error}</p>}
           
           <TransactionList>
-            {logs.map(log => (
+            {/* UPDATED: Use data.logs */}
+            {data.logs.map(log => (
               <TransactionItem key={log.cash_ledger_id}>
                 <TransactionDetails>
                   <TransactionType>{log.transaction_type.toLowerCase()}</TransactionType>
@@ -205,7 +278,7 @@ export default function CashierLogPage() {
                 </TransactionAmount>
               </TransactionItem>
             ))}
-            {logs.length === 0 && !loading && <p>No transactions found.</p>}
+            {data.logs.length === 0 && !loading && <p>No transactions found.</p>}
           </TransactionList>
         </LogContainer>
       </MainContent>
