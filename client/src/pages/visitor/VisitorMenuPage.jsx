@@ -1,226 +1,163 @@
 import { useState, useEffect } from 'react';
-import styled from 'styled-components';
-import axios from 'axios';
+import styled, { keyframes } from 'styled-components';
+import { visitorAxios } from '../../utils/apiAdapters';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useVisitorAuth } from '../../context/VisitorAuthContext';
 
-// --- Styling ---
-const PageContainer = styled.div`
-  min-height: 100vh;
-  background-color: #f9fafb;
+// --- STYLED COMPONENTS ---
+const Container = styled.div`
+  padding: 20px; padding-bottom: 100px;
 `;
-const Header = styled.header`
-  background-color: #7c3aed;
-  color: white;
-  padding: 16px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+const StallHeader = styled.div`
+  display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
+  background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
 `;
-const StallName = styled.h1`
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0;
+const StallLogo = styled.img`
+  width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background-color: #f1f5f9;
 `;
-const Balance = styled.div`
-  font-size: 1.125rem;
-  font-weight: 600;
-`;
-const MainContent = styled.main`
-  padding: 24px;
-`;
-const MenuList = styled.div`
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-`;
+const StallInfo = styled.div` flex: 1; `;
+const StallName = styled.h2` font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0; `;
+const StallDesc = styled.p` font-size: 0.9rem; color: #64748b; margin: 4px 0 0 0; line-height: 1.4; `;
+
+const MenuList = styled.div` display: grid; gap: 16px; `;
 const MenuItem = styled.div`
-  background-color: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  display: grid; grid-template-columns: 100px 1fr;
 `;
-const ItemDetails = styled.div`
-  display: flex;
-  flex-direction: column;
+const ItemImage = styled.div`
+  background-image: url(${props => props.src}); background-size: cover; background-position: center;
+  background-color: #f1f5f9;
 `;
-const ItemName = styled.h3`
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 4px 0;
-`;
-const ItemPrice = styled.span`
-  font-size: 1rem;
-  font-weight: 500;
-  color: #6b7280;
+const ItemContent = styled.div` padding: 16px; display: flex; flex-direction: column; `;
+const ItemHeader = styled.div` display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; `;
+const ItemTitle = styled.h3` font-size: 1rem; font-weight: 700; color: #0f172a; margin: 0; `;
+const ItemPrice = styled.span` font-size: 1rem; font-weight: 800; color: #0f172a; `;
+const ItemDesc = styled.p` font-size: 0.85rem; color: #64748b; margin: 0 0 12px 0; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;`;
+const ItemFooter = styled.div` display: flex; justify-content: space-between; align-items: center; margin-top: auto; `;
+const Badge = styled.span`
+  padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  background-color: ${props => props.type === 'veg' ? '#dcfce7' : '#fee2e2'};
+  color: ${props => props.type === 'veg' ? '#166534' : '#991b1b'};
 `;
 const AddButton = styled.button`
-  background-color: #eef2ff;
-  color: #4338ca;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  &:hover { background-color: #e0e7ff; }
+  background-color: #e0e7ff; color: #4338ca; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+  &:active { transform: scale(0.95); }
 `;
-const CartFooter = styled.footer`
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-  padding: 16px 24px;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+const QtyControl = styled.div`
+  display: flex; align-items: center; gap: 12px; background-color: #f1f5f9; padding: 4px; border-radius: 8px;
 `;
-const TotalPrice = styled.div`
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #111827;
+const QtyBtn = styled.button`
+  width: 28px; height: 28px; border-radius: 6px; border: none; background: white; color: #0f172a; font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  &:active { background: #e2e8f0; }
 `;
-const PayButton = styled.button`
-  background-color: #16a34a;
-  color: white;
-  font-weight: 600;
-  padding: 12px 24px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-size: 1.125rem;
-  transition: background-color 0.2s;
-  &:hover { background-color: #15803d; }
-  &:disabled { background-color: #9ca3af; }
-`;
-const ErrorMessage = styled.p`
-  color: #ef4444;
-  font-weight: 600;
-  text-align: center;
-`;
-// --- End of Styling ---
+const QtyVal = styled.span` font-weight: 700; color: #0f172a; min-width: 20px; text-align: center; `;
 
-// --- Private Route Hook (specific to this page) ---
-const useVisitorPrivateRoute = () => {
-  const { token } = useVisitorAuth();
-  const navigate = useNavigate();
-  
-  useEffect(() => {
-    if (!token) {
-      // If not logged in, redirect to login, but keep the URL params
-      const params = new URLSearchParams(window.location.search);
-      navigate(`/v/login?${params.toString()}`);
-    }
-  }, [token, navigate]);
-};
+const slideUp = keyframes`from { transform: translateY(100%); } to { transform: translateY(0); }`;
+const CartBar = styled.div`
+  position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 16px 20px;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.1); animation: ${slideUp} 0.3s ease-out; z-index: 20;
+  display: flex; justify-content: space-between; align-items: center;
+`;
+const CartInfo = styled.div``;
+const ItemCount = styled.div` font-size: 0.9rem; color: #64748b; font-weight: 600; `;
+const CartTotal = styled.div` font-size: 1.25rem; font-weight: 800; color: #0f172a; `;
+const PayButton = styled.button`
+  background-color: #16a34a; color: white; border: none; padding: 14px 32px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+  &:hover { background-color: #15803d; transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.3); }
+  &:active { transform: translateY(0); }
+  &:disabled { background-color: #9ca3af; cursor: not-allowed; transform: none; box-shadow: none; }
+`;
 
 export default function VisitorMenuPage() {
-  useVisitorPrivateRoute(); // Secure this page
-  
   const { stall_id } = useParams();
-  const { wallet, updateBalance } = useVisitorAuth();
-  
-  const [stallName, setStallName] = useState('Loading...');
-  const [menuItems, setMenuItems] = useState([]);
-  const [cart, setCart] = useState({}); // e.g., { item_id: quantity, ... }
-  
+  const { updateBalance } = useVisitorAuth();
+  const [stall, setStall] = useState(null);
+  const [menu, setMenu] = useState([]);
+  const [cart, setCart] = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  // Fetch Menu on load
   useEffect(() => {
-    axios.get(`http://localhost:3001/api/visitor/stall/${stall_id}/menu`)
-      .then(res => {
-        setStallName(res.data.stall_name);
-        setMenuItems(res.data.menu_items);
-      })
-      .catch(err => {
-        setError("Could not load menu.");
-      });
+    visitorAxios.get(`/visitor/stall/${stall_id}/menu`)
+      .then(res => { setStall(res.data.stall); setMenu(res.data.menu_items); })
+      .catch(err => console.error("Menu load failed", err));
   }, [stall_id]);
 
-  const addToCart = (item) => {
-    setCart(prevCart => ({
-      ...prevCart,
-      [item.item_id]: (prevCart[item.item_id] || 0) + 1
-    }));
+  const updateCart = (itemId, delta) => {
+    setCart(prev => {
+      const newQty = (prev[itemId] || 0) + delta;
+      if (newQty <= 0) { const { [itemId]: _, ...rest } = prev; return rest; }
+      return { ...prev, [itemId]: newQty };
+    });
   };
 
-  const calculateTotal = () => {
-    return Object.keys(cart).reduce((total, itemId) => {
-      const item = menuItems.find(m => m.item_id === itemId);
-      return total + (item.price * cart[itemId]);
-    }, 0);
-  };
-
-  const total = calculateTotal();
+  const total = Object.entries(cart).reduce((sum, [id, qty]) => sum + (menu.find(i => i.item_id === id)?.price || 0) * qty, 0);
+  const itemCount = Object.values(cart).reduce((a, b) => a + b, 0);
 
   const handlePay = async () => {
+    if (!window.confirm(`Confirm payment of ₹${total.toFixed(0)}?`)) return;
     setLoading(true);
-    setError(null);
-    
-    // Format cart for the API
-    const itemsToPay = Object.keys(cart).map(itemId => ({
-      item_id: itemId,
-      quantity: cart[itemId]
-    }));
-    
     try {
-      const response = await axios.post(`http://localhost:3001/api/visitor/stall/${stall_id}/pay`, {
-        items: itemsToPay
+      const res = await visitorAxios.post(`/visitor/stall/${stall_id}/pay`, {
+        items: Object.entries(cart).map(([id, qty]) => ({ item_id: id, quantity: qty }))
       });
-      
-      // Payment success!
-      updateBalance(response.data.new_balance); // Update global balance
-      alert(`Success! Your order #${response.data.orderId.substring(0, 5)} is confirmed.`);
-      setCart({}); // Clear the cart
-      setLoading(false);
-      
+      updateBalance(res.data.new_balance);
+      alert(`Order #${res.data.orderId.slice(0, 5)} confirmed!`);
+      setCart({});
     } catch (err) {
-      console.error("Payment failed:", err);
-      setError(err.response?.data?.error || "Payment failed. Please try again.");
-      setLoading(false);
-    }
+      alert(err.response?.data?.error || "Payment failed.");
+    } finally { setLoading(false); }
   };
 
+  if (!stall) return <p style={{padding: 20}}>Loading menu...</p>;
+
   return (
-    <PageContainer>
-      <Header>
-        <StallName>{stallName}</StallName>
-        <Balance>Balance: ₹{wallet ? parseFloat(wallet.current_balance).toFixed(2) : '0.00'}</Balance>
-      </Header>
-      
-      <MainContent>
-        {menuItems.map(item => (
+    <Container>
+      <StallHeader>
+        {stall.logo_url ? <StallLogo src={stall.logo_url} /> : <div style={{width:64, height:64, background:'#e2e8f0', borderRadius:12}} />}
+        <StallInfo>
+          <StallName>{stall.stall_name}</StallName>
+          <StallDesc>{stall.description || 'Welcome to our stall!'}</StallDesc>
+        </StallInfo>
+      </StallHeader>
+
+      <MenuList>
+        {menu.map(item => (
           <MenuItem key={item.item_id}>
-            <ItemDetails>
-              <ItemName>{item.item_name}</ItemName>
-              <ItemPrice>₹{parseFloat(item.price).toFixed(2)}</ItemPrice>
-            </ItemDetails>
-            <AddButton onClick={() => addToCart(item)}>
-              Add {cart[item.item_id] > 0 && `(${cart[item.item_id]})`}
-            </AddButton>
+            <ItemImage src={item.image_url || 'https://placehold.co/200x200/e2e8f0/94a3b8?text=No+Image'} />
+            <ItemContent>
+              <ItemHeader>
+                <ItemTitle>{item.item_name}</ItemTitle>
+                <ItemPrice>₹{parseFloat(item.price).toFixed(0)}</ItemPrice>
+              </ItemHeader>
+              <ItemDesc>{item.description}</ItemDesc>
+              <ItemFooter>
+                <Badge type={item.is_veg}>{item.is_veg}</Badge>
+                {cart[item.item_id] ? (
+                  <QtyControl>
+                    <QtyBtn onClick={() => updateCart(item.item_id, -1)}>−</QtyBtn>
+                    <QtyVal>{cart[item.item_id]}</QtyVal>
+                    <QtyBtn onClick={() => updateCart(item.item_id, 1)}>+</QtyBtn>
+                  </QtyControl>
+                ) : (
+                  <AddButton onClick={() => updateCart(item.item_id, 1)}>ADD +</AddButton>
+                )}
+              </ItemFooter>
+            </ItemContent>
           </MenuItem>
         ))}
-      </MainContent>
-      
-      {total > 0 && (
-        <CartFooter>
-          <TotalPrice>Total: ₹{total.toFixed(2)}</TotalPrice>
+      </MenuList>
+
+      {itemCount > 0 && (
+        <CartBar>
+          <CartInfo>
+            <ItemCount>{itemCount} Items</ItemCount>
+            <CartTotal>₹{total.toFixed(0)}</CartTotal>
+          </CartInfo>
           <PayButton onClick={handlePay} disabled={loading}>
-            {loading ? 'Processing...' : 'Pay Now'}
+            {loading ? 'Paying...' : `PAY ₹${total.toFixed(0)}`}
           </PayButton>
-        </CartFooter>
+        </CartBar>
       )}
-      {error && <ErrorMessage>{error}</ErrorMessage>}
-    </PageContainer>
+    </Container>
   );
 }

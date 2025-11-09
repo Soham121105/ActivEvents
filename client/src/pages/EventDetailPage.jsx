@@ -1,263 +1,360 @@
+
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import axios from 'axios';
+import { adminAxios } from '../utils/apiAdapters';
 import { useParams, Link } from 'react-router-dom';
 
-// --- Styling ---
-const PageHeader = styled.h1`
-  font-size: 2.25rem;
-  font-weight: 800;
-  color: #111827;
-  margin-bottom: 24px;
+// --- STYLED COMPONENTS ---
+const DashboardContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 `;
 
-const LoadingText = styled.p`
-  font-size: 1.125rem;
-  color: #6b7280;
-`;
-
-const BackLink = styled(Link)`
-  color: #2563eb;
-  text-decoration: none;
-  font-weight: 500;
-  margin-bottom: 16px;
-  display: inline-block;
-  
-  &:hover {
-    text-decoration: underline;
+const HeaderSection = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  @media (max-width: 640px) {
+    flex-direction: column;
+    gap: 16px;
   }
 `;
 
-const Section = styled.div`
-  background-color: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+const PageTitle = styled.h1`
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #111827;
+  margin: 0;
+  line-height: 1.1;
+`;
+
+const EventMeta = styled.div`
+  color: #6b7280;
+  font-size: 1.1rem;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const ActionButtons = styled.div`
+  display: flex;
+  gap: 12px;
+`;
+
+const Button = styled(Link)`
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  background-color: ${props => props.secondary ? 'white' : '#4f46e5'};
+  color: ${props => props.secondary ? '#374151' : 'white'};
+  border: 1px solid ${props => props.secondary ? '#d1d5db' : 'transparent'};
+  white-space: nowrap;
+
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+`;
+
+// --- STATS CARDS ---
+const StatsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  @media (max-width: 1024px) { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 640px) { grid-template-columns: 1fr; }
+`;
+
+const StatCard = styled.div`
+  background: white;
   padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+`;
+
+const StatLabel = styled.span`
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+`;
+
+const StatValue = styled.span`
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin-top: 8px;
+  
+  &.green { color: #059669; }
+  &.blue { color: #2563eb; }
+  &.indigo { color: #4f46e5; }
+`;
+
+const StatSub = styled.span`
+  font-size: 0.875rem;
+  color: #9ca3af;
+  margin-top: 4px;
+`;
+
+// --- DATA TABLES ---
+const TableSection = styled.section`
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 `;
 
 const SectionHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
+  padding: 20px 24px;
   border-bottom: 1px solid #e5e7eb;
 `;
 
 const SectionTitle = styled.h2`
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: #111827;
   margin: 0;
 `;
 
-const Button = styled(Link)`
-  background-color: #2563eb;
-  color: white;
-  font-weight: 600;
-  padding: 10px 20px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-size: 0.875rem;
-  text-decoration: none;
-  transition: background-color 0.2s;
-  &:hover {
-    background-color: #1d4ed8;
-  }
+const TableWrapper = styled.div`
+  overflow-x: auto;
 `;
 
-const List = styled.ul`
-  list-style: none;
-  padding: 0;
-  margin: 0;
+const Table = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
 `;
 
-const ListItem = styled.li`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid #e5e7eb;
-  
-  &:last-child {
-    border-bottom: none;
-  }
-`;
-
-const ItemName = styled.span`
-  font-weight: 600;
-  color: #1f2937;
-`;
-
-const ItemDetails = styled.span`
-  font-size: 0.875rem;
+const Th = styled.th`
+  text-align: left;
+  padding: 16px 24px;
+  font-size: 0.75rem;
+  font-weight: 700;
   color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
 `;
 
-const ItemDeleteButton = styled.button`
+const Td = styled.td`
+  padding: 16px 24px;
+  font-size: 1rem;
+  color: #1f2937;
+  border-bottom: 1px solid #f3f4f6;
+  
+  &.mono { font-family: monospace; font-weight: 600; }
+  &.right { text-align: right; }
+`;
+
+const Tr = styled.tr`
+  &:hover { background-color: #f9fafb; }
+`;
+
+const StatusBadge = styled.span`
+  background-color: ${props => props.active ? '#dcfce7' : '#fee2e2'};
+  color: ${props => props.active ? '#166534' : '#991b1b'};
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+`;
+
+// --- ACTION BUTTONS IN TABLE ---
+const TableActionButton = styled.button`
   background: none;
   border: none;
-  color: #9ca3af;
+  color: #6b7280;
   font-weight: 500;
   font-size: 0.875rem;
   cursor: pointer;
   margin-left: 16px;
-  
-  &:hover {
-    color: #ef4444;
-    text-decoration: underline;
-  }
+  &:hover { color: #ef4444; text-decoration: underline; }
 `;
-// --- End of new styles ---
 
 export default function EventDetailPage() {
-  const { id } = useParams(); // This is the eventId
-
+  const { id } = useParams();
   const [event, setEvent] = useState(null);
-  const [stalls, setStalls] = useState([]);
+  const [financials, setFinancials] = useState(null);
   const [cashiers, setCashiers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchData = async () => {
+  const fetchEventData = async () => {
     try {
-      setLoading(true); // Ensure loading is true on refetch
-      // Set the auth token for admin routes
-      axios.defaults.headers.common['Authorization'] = `Bearer ${localStorage.getItem('admin_token')}`;
-      
-      const [eventRes, stallsRes, cashiersRes] = await Promise.all([
-        axios.get(`http://localhost:3001/api/events/${id}`),
-        axios.get(`http://localhost:3001/api/events/${id}/stalls`),
-        axios.get(`http://localhost:3001/api/events/${id}/cashiers`)
+      setLoading(true);
+      // Parallel data fetching for speed
+      const [eventRes, finRes, cashiersRes] = await Promise.all([
+        adminAxios.get(`/events/${id}`),
+        adminAxios.get(`/events/${id}/financial-summary`),
+        adminAxios.get(`/events/${id}/cashiers`)
       ]);
-      
+
       setEvent(eventRes.data);
-      setStalls(stallsRes.data);
+      setFinancials(finRes.data);
       setCashiers(cashiersRes.data);
     } catch (err) {
-      console.error("Error fetching event data:", err);
-      setError("Failed to fetch event data. You may be logged out.");
+      console.error("Error fetching dashboard data:", err);
+      setError("Failed to load event dashboard.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchEventData();
   }, [id]);
 
-  const handleDeleteStall = async (stallId) => {
-    if (!window.confirm("Are you sure you want to delete this stall?\nAll its data (menu, orders, etc.) will be lost.")) {
-      return;
-    }
-    
+  const handleDeleteCashier = async (cashierId) => {
+    if (!window.confirm("Are you sure you want to delete this cashier?")) return;
     try {
-      await axios.delete(`http://localhost:3001/api/events/${id}/stalls/${stallId}`);
-      // Update UI instantly
-      setStalls(prevStalls => prevStalls.filter(stall => stall.stall_id !== stallId));
+      await adminAxios.delete(`/events/${id}/cashiers/${cashierId}`);
+      setCashiers(prev => prev.filter(c => c.cashier_id !== cashierId));
     } catch (err) {
-      console.error("Error deleting stall:", err);
-      alert("Failed to delete stall.");
+      alert("Failed to delete cashier.");
     }
   };
-  
-  const handleDeleteCashier = async (cashierId) => {
-    if (!window.confirm("Are you sure you want to delete this cashier?")) {
-      return;
-    }
-    
-    try {
-      // NOTE: You must add this API route to eventRoutes.js to make this work:
-      // router.delete('/:event_id/cashiers/:cashier_id', ...)
-      await axios.delete(`http://localhost:3001/api/events/${id}/cashiers/${cashierId}`);
-      setCashiers(prevCashiers => prevCashiers.filter(c => c.cashier_id !== cashierId));
-    } catch (err) {
-      console.error("Error deleting cashier:", err);
-      alert("Failed to delete cashier. (API endpoint might be missing)");
-    }
-  }
 
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency', currency: 'INR', maximumFractionDigits: 0
+    }).format(val || 0);
+  };
 
-  if (loading) {
-    return <LoadingText>Loading event details...</LoadingText>;
-  }
+  if (loading) return <p style={{padding: 32}}>Loading dashboard...</p>;
+  if (error || !event || !financials) return <p style={{color: 'red', padding: 32}}>{error || 'Failed to load data.'}</p>;
 
-  if (error || !event) {
-    return <LoadingText style={{ color: 'red' }}>{error || 'Event not found.'}</LoadingText>;
-  }
+  const netCash = parseFloat(financials.cash.total_in) - parseFloat(financials.cash.total_out);
 
   return (
-    <>
-      <BackLink to="/">&larr; Back to Dashboard</BackLink>
-      <PageHeader>{event.event_name}</PageHeader>
-      
-      <Section>
+    <DashboardContainer>
+      {/* --- HEADER --- */}
+      <HeaderSection>
+        <div>
+          <Link to="/" style={{color: '#6b7280', textDecoration: 'none', fontWeight: 500}}>
+            &larr; Back to Events
+          </Link>
+          <PageTitle style={{marginTop: '16px'}}>{event.event_name}</PageTitle>
+          <EventMeta>
+            {new Date(event.event_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            <StatusBadge active={event.status !== 'COMPLETED'}>
+              {event.status}
+            </StatusBadge>
+          </EventMeta>
+        </div>
+        <ActionButtons>
+          <Button to={`/event/${id}/add-stall`} secondary>+ Add Stall</Button>
+          <Button to={`/event/${id}/add-cashier`}>+ Add Cashier</Button>
+        </ActionButtons>
+      </HeaderSection>
+
+      {/* --- FINANCIAL OVERVIEW CARDS --- */}
+      <StatsGrid>
+        <StatCard>
+          <StatLabel>Net Cash Collected</StatLabel>
+          <StatValue className="green">{formatCurrency(netCash)}</StatValue>
+          <StatSub>In: {formatCurrency(financials.cash.total_in)} | Out: {formatCurrency(financials.cash.total_out)}</StatSub>
+        </StatCard>
+        <StatCard>
+          <StatLabel>Total Stall Sales</StatLabel>
+          <StatValue className="blue">{formatCurrency(financials.sales.total_sales)}</StatValue>
+          <StatSub>Gross transaction value</StatSub>
+        </StatCard>
+        <StatCard>
+          <StatLabel>Your Revenue (Commission)</StatLabel>
+          <StatValue className="indigo">{formatCurrency(financials.sales.total_commission)}</StatValue>
+          <StatSub>Net profit for organizer</StatSub>
+        </StatCard>
+        <StatCard>
+          <StatLabel>Total Owed to Stalls</StatLabel>
+          <StatValue>{formatCurrency(financials.sales.total_owed)}</StatValue>
+          <StatSub>Payable after event</StatSub>
+        </StatCard>
+      </StatsGrid>
+
+      {/* --- STALL PERFORMANCE TABLE --- */}
+      <TableSection>
         <SectionHeader>
-          <SectionTitle>Stall Management</SectionTitle>
-          <Button to={`/event/${id}/add-stall`}>
-            + Add New Stall
-          </Button>
+          <SectionTitle>Stall Performance & Payouts</SectionTitle>
         </SectionHeader>
-        <List>
-          {stalls.length === 0 ? (
-            <ListItem as="div">
-              <p>No stalls have been added to this event yet.</p>
-            </ListItem>
-          ) : (
-            stalls.map((stall) => (
-              <ListItem key={stall.stall_id}>
-                <div>
-                  {/* UPDATED LINK to the new finance page */}
-                  <Link to={`/event/${id}/stall/${stall.stall_id}/finance`}>
-                    <ItemName>{stall.stall_name}</ItemName>
-                  </Link>
-                  <ItemDetails style={{display: 'block', marginTop: '4px'}}>
-                    Phone: {stall.owner_phone} | Commission: {(stall.commission_rate * 100).toFixed(0)}%
-                  </ItemDetails>
-                </div>
-                <ItemDeleteButton onClick={() => handleDeleteStall(stall.stall_id)}>
-                  Delete
-                </ItemDeleteButton>
-              </ListItem>
-            ))
-          )}
-        </List>
-      </Section>
-      
-      <Section>
+        <TableWrapper>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Stall Name</Th>
+                <Th className="right">Total Sales</Th>
+                <Th className="right">Commission</Th>
+                <Th className="right">Net Payable</Th>
+                <Th></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {financials.stalls.length === 0 ? (
+                <tr><Td colSpan="5" style={{textAlign: 'center', color: '#9ca3af'}}>No stalls yet.</Td></tr>
+              ) : (
+                financials.stalls.map(stall => (
+                  <Tr key={stall.stall_id}>
+                    <Td style={{fontWeight: 600}}>{stall.stall_name}</Td>
+                    <Td className="right mono">{formatCurrency(stall.stall_sales)}</Td>
+                    <Td className="right mono" style={{color: '#ef4444'}}>-{formatCurrency(stall.stall_commission)}</Td>
+                    <Td className="right mono" style={{color: '#059669'}}>{formatCurrency(stall.stall_revenue)}</Td>
+                    <Td className="right">
+                      <Link to={`/event/${id}/stall/${stall.stall_id}/finance`} style={{color: '#4f46e5', fontWeight: 600, textDecoration: 'none'}}>
+                        View Details &rarr;
+                      </Link>
+                    </Td>
+                  </Tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </TableWrapper>
+      </TableSection>
+
+      {/* --- CASHIER STAFF TABLE --- */}
+      <TableSection>
         <SectionHeader>
-          <SectionTitle>Cashier Management</SectionTitle>
-          <Button to={`/event/${id}/add-cashier`}>
-            + Add New Cashier
-          </Button>
+          <SectionTitle>Cashier Staff</SectionTitle>
         </SectionHeader>
-        <List>
-          {cashiers.length === 0 ? (
-            <ListItem as="div">
-              <p>No cashiers have been added to this event yet.</p>
-            </ListItem>
-          ) : (
-            cashiers.map((cashier) => (
-              <ListItem key={cashier.cashier_id}>
-                <div>
-                  <ItemName>{cashier.cashier_name}</ItemName>
-                  <ItemDetails style={{display: 'block', marginTop: '4px'}}>
-                    Status: {cashier.is_active ? 'Active' : 'Inactive'}
-                  </ItemDetails>
-                </div>
-                {/* --- THIS WAS THE BUG FIX --- */}
-                <ItemDeleteButton onClick={() => handleDeleteCashier(cashier.cashier_id)}>
-                  Delete
-                </ItemDeleteButton>
-                {/* --- END OF BUG FIX --- */}
-              </ListItem>
-            ))
-          )}
-        </List>
-      </Section>
-    </>
+        <TableWrapper>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Cashier Name</Th>
+                <Th>Status</Th>
+                <Th className="right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashiers.length === 0 ? (
+                <tr><Td colSpan="3" style={{textAlign: 'center', color: '#9ca3af'}}>No cashiers yet.</Td></tr>
+              ) : (
+                 cashiers.map(c => (
+                   <Tr key={c.cashier_id}>
+                     <Td style={{fontWeight: 600}}>{c.cashier_name}</Td>
+                     <Td><StatusBadge active={c.is_active}>{c.is_active ? 'Active' : 'Inactive'}</StatusBadge></Td>
+                     <Td className="right">
+                       <TableActionButton onClick={() => handleDeleteCashier(c.cashier_id)}>
+                         Delete
+                       </TableActionButton>
+                     </Td>
+                   </Tr>
+                 ))
+              )}
+            </tbody>
+          </Table>
+        </TableWrapper>
+      </TableSection>
+    </DashboardContainer>
   );
 }

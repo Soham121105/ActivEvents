@@ -1,163 +1,26 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import axios from 'axios';
+// --- CHANGE: Use admin adapter ---
+import { adminAxios } from '../utils/apiAdapters';
 import { Link } from 'react-router-dom';
 
-// --- Reusable Styled Components ---
-const PageHeaderContainer = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  @media (max-width: 768px) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-`;
-
-const PageHeader = styled.h1`
-  font-size: 2.25rem;
-  font-weight: 800;
-  color: #111827;
-  margin-top: 0;
-  margin-bottom: 0;
-`;
-
-const Button = styled(Link)`
-  background-color: #2563eb;
-  color: white;
-  font-weight: 600;
-  padding: 12px 24px;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  font-size: 1rem;
-  text-decoration: none;
-  transition: background-color 0.2s;
-  &:hover {
-    background-color: #1d4ed8;
-  }
-  @media (max-width: 768px) {
-    width: 100%;
-    text-align: center;
-  }
-`;
-
-const LoadingText = styled.p`
-  font-size: 1.125rem;
-  color: #6b7280;
-`;
-
-const Section = styled.div`
-  background-color: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
-`;
-
-const SectionTitle = styled.h2`
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #111827;
-  margin-top: 0;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e5e7eb;
-`;
-
-const StatsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const StatCard = styled(Section)`
-  margin-bottom: 0;
-`;
-
-const StatValue = styled.p`
-  font-size: 2.25rem;
-  font-weight: 700;
-  color: #2563eb;
-  margin: 0 0 8px 0;
-`;
-
-const StatLabel = styled.p`
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #6b7280;
-  margin: 0;
-`;
-
-const EventGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-`;
-
-const EventCard = styled(Link)`
-  background-color: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
-  text-decoration: none;
-  color: inherit;
-  transition: all 0.2s ease-in-out;
-  display: flex;
-  flex-direction: column;
-  
-  &:hover {
-    box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.08);
-    transform: translateY(-4px);
-  }
-`;
-
-const EventCardName = styled.h3`
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin-top: 0;
-  margin-bottom: 8px;
-`;
-
-const EventCardDate = styled.p`
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin: 0;
-`;
-
-// --- NEW: Styles for the delete button ---
-const EventCardFooter = styled.div`
-  margin-top: auto;
-  padding-top: 16px;
-  display: flex;
-  justify-content: flex-end;
-`;
-
-const DeleteButton = styled.button`
-  background: transparent;
-  border: none;
-  color: #9ca3af; /* gray-400 */
-  font-weight: 500;
-  font-size: 0.875rem;
-  cursor: pointer;
-  padding: 4px;
-  transition: color 0.2s;
-  
-  &:hover {
-    color: #ef4444; /* red-500 */
-    text-decoration: underline;
-  }
-`;
-// --- End of new styles ---
-
+// ... (Keep all styled components exactly the same) ...
+const PageHeaderContainer = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; @media (max-width: 768px) { flex-direction: column; align-items: flex-start; gap: 16px; } `;
+const PageHeader = styled.h1` font-size: 2.25rem; font-weight: 800; color: #111827; margin-top: 0; margin-bottom: 0; `;
+const Button = styled(Link)` background-color: #2563eb; color: white; font-weight: 600; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-size: 1rem; text-decoration: none; transition: background-color 0.2s; &:hover { background-color: #1d4ed8; } @media (max-width: 768px) { width: 100%; text-align: center; } `;
+const LoadingText = styled.p` font-size: 1.125rem; color: #6b7280; `;
+const Section = styled.div` background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); `;
+const SectionTitle = styled.h2` font-size: 1.5rem; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; `;
+const StatsGrid = styled.div` display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; @media (max-width: 768px) { grid-template-columns: 1fr; } `;
+const StatCard = styled(Section)` margin-bottom: 0; `;
+const StatValue = styled.p` font-size: 2.25rem; font-weight: 700; color: #2563eb; margin: 0 0 8px 0; `;
+const StatLabel = styled.p` font-size: 0.875rem; font-weight: 500; color: #6b7280; margin: 0; `;
+const EventGrid = styled.div` display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; `;
+const EventCard = styled(Link)` background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); text-decoration: none; color: inherit; transition: all 0.2s ease-in-out; display: flex; flex-direction: column; &:hover { box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.08); transform: translateY(-4px); } `;
+const EventCardName = styled.h3` font-size: 1.25rem; font-weight: 600; color: #1f2937; margin-top: 0; margin-bottom: 8px; `;
+const EventCardDate = styled.p` font-size: 0.875rem; color: #6b7280; margin: 0; `;
+const EventCardFooter = styled.div` margin-top: auto; padding-top: 16px; display: flex; justify-content: flex-end; `;
+const DeleteButton = styled.button` background: transparent; border: none; color: #9ca3af; font-weight: 500; font-size: 0.875rem; cursor: pointer; padding: 4px; transition: color 0.2s; &:hover { color: #ef4444; text-decoration: underline; } `;
 
 export default function EventListPage() {
   const [events, setEvents] = useState([]); 
@@ -166,11 +29,12 @@ export default function EventListPage() {
 
   const fetchEvents = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/events');
+      // --- CHANGE: Use adminAxios ---
+      const response = await adminAxios.get('/events');
       setEvents(response.data); 
     } catch (err) {
       console.error("Error fetching events:", err);
-      setError("Failed to fetch events. Is the backend server running?");
+      setError("Failed to fetch events.");
     } finally {
       setLoading(false);
     }
@@ -180,22 +44,21 @@ export default function EventListPage() {
     fetchEvents();
   }, []);
 
-  // --- NEW: Delete Event Handler ---
   const handleDeleteEvent = async (e, eventId) => {
-    e.preventDefault(); // Stop the <Link> from navigating
-    e.stopPropagation(); // Stop event bubbling
+    e.preventDefault(); 
+    e.stopPropagation(); 
 
-    if (!window.confirm("ARE YOU SURE?\n\nThis will delete the event AND all its stalls, cashiers, wallets, and orders.\nThis action cannot be undone.")) {
+    if (!window.confirm("ARE YOU SURE?\n\nThis will delete the event AND all its data. This action cannot be undone.")) {
       return;
     }
 
     try {
-      await axios.delete(`http://localhost:3001/api/events/${eventId}`);
-      // Update state to remove the event from the UI instantly
+      // --- CHANGE: Use adminAxios ---
+      await adminAxios.delete(`/events/${eventId}`);
       setEvents(prevEvents => prevEvents.filter(event => event.event_id !== eventId));
     } catch (err) {
       console.error("Error deleting event:", err);
-      alert("Failed to delete the event. Please try again.");
+      alert("Failed to delete the event.");
     }
   };
 
@@ -203,9 +66,7 @@ export default function EventListPage() {
     <> 
       <PageHeaderContainer>
         <PageHeader>Event Dashboard</PageHeader>
-        <Button to="/create-event">
-          + Create New Event
-        </Button>
+        <Button to="/create-event">+ Create New Event</Button>
       </PageHeaderContainer>
 
       <StatsGrid>
@@ -225,33 +86,17 @@ export default function EventListPage() {
       
       <Section style={{ marginTop: '24px' }}>
         <SectionTitle>Upcoming Events</SectionTitle>
-        {loading ? (
-          <LoadingText>Loading events...</LoadingText>
-        ) : error ? (
-          <p style={{ color: 'red' }}>{error}</p>
-        ) : (
+        {loading ? <LoadingText>Loading events...</LoadingText> : error ? <p style={{ color: 'red' }}>{error}</p> : (
           <EventGrid>
-            {events.length === 0 ? (
-              <p>No events found. Click "Create New Event" to start!</p>
-            ) : (
+            {events.length === 0 ? <p>No events found. Click "Create New Event" to start!</p> : (
               events.map((event) => (
                 <EventCard key={event.event_id} to={`/event/${event.event_id}`}>
-                  <div> {/* Added div to contain main content */}
+                  <div>
                     <EventCardName>{event.event_name}</EventCardName>
-                    <EventCardDate>
-                      {new Date(event.event_date).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </EventCardDate>
+                    <EventCardDate>{new Date(event.event_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</EventCardDate>
                   </div>
-                  
-                  {/* --- NEW: Delete button added to footer --- */}
                   <EventCardFooter>
-                    <DeleteButton onClick={(e) => handleDeleteEvent(e, event.event_id)}>
-                      Delete Event
-                    </DeleteButton>
+                    <DeleteButton onClick={(e) => handleDeleteEvent(e, event.event_id)}>Delete Event</DeleteButton>
                   </EventCardFooter>
                 </EventCard>
               ))

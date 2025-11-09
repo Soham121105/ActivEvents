@@ -5,148 +5,183 @@ import { useAuth } from './context/AuthContext';
 
 // --- Private Route Hook ---
 const usePrivateRoute = () => {
-  const { token } = useAuth();
+  const { token, stall } = useAuth();
   const navigate = useNavigate();
   
   useEffect(() => {
     if (!token) {
-      navigate('/stall-login');
+      // Use the slug if available, otherwise try to grab it from URL, fallback to home
+      const slug = stall?.url_slug || window.location.pathname.split('/')[1] || '';
+       navigate(`/${slug}/stall-login`);
     }
-  }, [token, navigate]);
+  }, [token, navigate, stall]);
 };
 
 // --- Styling ---
 const GlobalStyle = createGlobalStyle`
-  body { margin: 0; padding: 0; background-color: #f9fafb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+  :root {
+    --primary: #4f46e5;
+    --bg-main: #f9fafb;
+    --text-main: #111827;
+  }
+  body { 
+    margin: 0; padding: 0; background-color: var(--bg-main); color: var(--text-main); 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
 `;
+
 const AppLayout = styled.div`
   display: flex;
   min-height: 100vh;
 `;
+
 const Sidebar = styled.nav`
-  width: 240px;
+  width: 260px;
   background-color: white;
   border-right: 1px solid #e5e7eb;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
-  padding: 24px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
+  position: fixed;
+  height: 100vh;
+  overflow-y: auto;
 `;
-const LogoText = styled.div`
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #111827;
+
+const LogoSection = styled.div`
   margin-bottom: 32px;
+  padding: 0 12px;
 `;
+
+const LogoText = styled.div`
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.025em;
+`;
+
+const ClubName = styled.div`
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+  margin-top: 4px;
+`;
+
 const NavList = styled.ul`
   list-style: none;
   padding: 0;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 `;
+
 const NavItem = styled.li`
-  margin-bottom: 8px;
   a {
-    display: block;
-    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
     border-radius: 8px;
     text-decoration: none;
-    font-weight: 500;
-    color: #374151;
-    transition: all 0.2s;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #4b5563;
+    transition: all 0.15s ease;
+
     &:hover {
       background-color: #f3f4f6;
+      color: var(--text-main);
     }
     &.active {
-      background-color: #f0fdf4; /* Green accent */
-      color: #15803d;
+      background-color: #eef2ff;
+      color: var(--primary);
     }
   }
 `;
+
 const MainContent = styled.main`
   flex-grow: 1;
-  padding: 32px 48px;
-  overflow-y: auto;
+  margin-left: 260px; /* Offset for fixed sidebar */
+  padding: 32px;
+  width: calc(100% - 260px);
 `;
+
 const LogoutButton = styled.button`
-  display: block;
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 12px;
   border-radius: 8px;
-  text-decoration: none;
-  font-weight: 500;
-  color: #374151;
-  transition: all 0.2s;
-  background-color: #f3f4f6;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #4b5563;
+  transition: all 0.15s ease;
+  background-color: transparent;
   border: none;
   cursor: pointer;
   text-align: left;
-  font-size: 1rem;
-  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
   &:hover {
     background-color: #fee2e2;
-    color: #b91c1c;
+    color: #991b1b;
   }
 `;
-// --- End of Styling ---
 
 function StallLayout() {
   usePrivateRoute(); 
-  const { logout } = useAuth();
+  const { logout, stall } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
-    navigate('/stall-login');
+    const slug = stall?.url_slug || '';
+    navigate(`/${slug}/stall-login`);
   };
 
   return (
     <AppLayout>
       <GlobalStyle />
       <Sidebar>
-        <LogoText>Stall Dashboard</LogoText>
-        <NavList>
-          
-          {/* "Quick POS" is now the main dashboard page */}
-          <NavItem>
-            <NavLink to="/stall/pos" end>
-              Point of Sale
-            </NavLink>
-          </NavItem>
-          
-          <NavItem>
-            <NavLink to="/stall/menu">
-              Manage Menu
-            </NavLink>
-          </NavItem>
-          
-          <NavItem>
-            <NavLink to="/stall/transactions">
-              Transactions
-            </NavLink>
-          </NavItem>
-          
-          <NavItem>
-            <NavLink to="/stall/qr">
-              Event QR Code
-            </NavLink>
-          </NavItem>
-          
-          {/* We've removed the "Live Dashboard (KDS)" link */}
+        <LogoSection>
+          <LogoText>{stall?.name || 'Stall Portal'}</LogoText>
+          {stall?.club_name && <ClubName>{stall.club_name}</ClubName>}
+        </LogoSection>
 
+        <NavList>
+          <NavItem>
+            <NavLink to="/stall/pos" end>Live Orders (KDS)</NavLink>
+          </NavItem>
+          <NavItem>
+            <NavLink to="/stall/menu">Menu Management</NavLink>
+          </NavItem>
+          <NavItem>
+            <NavLink to="/stall/transactions">Sales History</NavLink>
+          </NavItem>
+          <NavItem>
+            <NavLink to="/stall/qr">Stall QR Code</NavLink>
+          </NavItem>
+          
+          {/* Divider for Settings */}
+          <li style={{height: '1px', backgroundColor: '#e5e7eb', margin: '24px 0'}}></li>
+          
+          <NavItem>
+            <NavLink to="/stall/settings">Stall Settings</NavLink>
+          </NavItem>
         </NavList>
         
-        <NavItem style={{ marginTop: 'auto' }}> 
+        <div style={{ marginTop: 'auto', paddingTop: '24px' }}> 
           <LogoutButton onClick={handleLogout}>
             Logout
           </LogoutButton>
-        </NavItem>
-
+        </div>
       </Sidebar>
       
       <MainContent>
         <Outlet />
       </MainContent>
-
     </AppLayout>
   );
 }

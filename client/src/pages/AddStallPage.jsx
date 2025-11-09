@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import styled from 'styled-components';
-import axios from 'axios';
+// --- CHANGE: Use admin adapter ---
+import { adminAxios } from '../utils/apiAdapters';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 
-// --- Styling ---
+// ... (Keep all styled components exactly the same) ...
 const PageHeader = styled.h1`font-size: 2.25rem; font-weight: 800; color: #111827; margin-bottom: 24px;`;
 const BackLink = styled(Link)`color: #2563eb; text-decoration: none; font-weight: 500; margin-bottom: 16px; display: inline-block; &:hover { text-decoration: underline; }`;
 const Section = styled.div`background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); max-width: 600px;`;
@@ -23,7 +24,6 @@ export default function AddStallPage() {
 
   const [stallName, setStallName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
-  // 1. New State for Commission
   const [commissionRate, setCommissionRate] = useState('0.20'); 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -36,10 +36,10 @@ export default function AddStallPage() {
     setLoading(true);
 
     try {
-      const response = await axios.post(`http://localhost:3001/api/events/${eventId}/stalls`, {
+      // --- CHANGE: Use adminAxios ---
+      const response = await adminAxios.post(`/events/${eventId}/stalls`, {
         stall_name: stallName,
         owner_phone: ownerPhone,
-        // 2. Send commission to backend
         commission_rate: parseFloat(commissionRate),
       });
 
@@ -63,11 +63,9 @@ export default function AddStallPage() {
     <>
       <BackLink to={`/event/${eventId}`}>&larr; Back to Event Hub</BackLink>
       <PageHeader>Add New Stall</PageHeader>
-      
       <Section>
         <Form onSubmit={handleAddStall}>
           {error && <p style={{ color: 'red', fontSize: '0.875rem' }}>{error}</p>}
-
           <InputGroup>
             <Label htmlFor="stall_name">Stall Name</Label>
             <Input id="stall_name" type="text" value={stallName} onChange={(e) => setStallName(e.target.value)} placeholder="e.g., Gupta Chaat House" required />
@@ -76,26 +74,13 @@ export default function AddStallPage() {
             <Label htmlFor="owner_phone">Stall Owner Phone Number</Label>
             <Input id="owner_phone" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="9876543210" required />
           </InputGroup>
-
-          {/* 3. New Input for Commission */}
           <InputGroup>
             <Label htmlFor="commission_rate">Commission Rate (e.g., 0.20 for 20%)</Label>
-            <Input 
-              id="commission_rate" 
-              type="number" 
-              step="0.01" 
-              min="0" 
-              max="1" 
-              value={commissionRate} 
-              onChange={(e) => setCommissionRate(e.target.value)} 
-              required 
-            />
+            <Input id="commission_rate" type="number" step="0.01" min="0" max="1" value={commissionRate} onChange={(e) => setCommissionRate(e.target.value)} required />
           </InputGroup>
-          
           <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Stall'}</Button>
         </Form>
       </Section>
-
       {showModal && (
         <ModalBackdrop>
           <ModalContent>
@@ -103,7 +88,7 @@ export default function AddStallPage() {
             <p>Please provide these details to the stall owner.</p>
             <InputGroup style={{textAlign: 'left'}}>
               <Label>Login Phone</Label>
-              <PasswordDisplay style={{fontSize: '1.25rem', color: '#1f2937'}}>{newStall.owner_phone}</PasswordDisplay>
+              <PasswordDisplay>{newStall.owner_phone}</PasswordDisplay>
             </InputGroup>
             <InputGroup style={{textAlign: 'left'}}>
               <Label>Temporary Password</Label>

@@ -295,5 +295,100 @@ router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
     res.status(500).json({ error: 'Server error fetching stall transactions' });
   }
 });
+router.delete('/:event_id/cashiers/:cashier_id', async (req, res) => {
+  const { event_id, cashier_id } = req.params;
+  // We also need to verify this event belongs to the logged-in organizer for security
+  const organizer_id = req.organizer.id;
+
+  try {
+    const query = {
+      text: `DELETE FROM cashiers 
+             WHERE cashier_id = $1 AND event_id = $2 
+             AND event_id IN (SELECT event_id FROM events WHERE organizer_id = $3)
+             RETURNING *`,
+      values: [cashier_id, event_id, organizer_id],
+    };
+    const result = await pool.query(query);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cashier not found or unauthorized' });
+    }
+    res.status(200).json({ message: 'Cashier deleted successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error while deleting cashier' });
+  }
+});
+
+router.get('/:id/financial-summary', async (req, res) => {
+  const { id: event_id } = req.params;
+  const organizer_id = req.organizer.id;
+
+  try {
+    // 1. Verify event belongs to organizer
+    const eventCheck = await pool.query('SELECT event_id FROM events WHERE event_id = $1 AND organizer_id = $2', [event_id, organizer_id]);
+    if (eventCheck.rows.length === 0) return res.status(404).json({ error: 'Event not found' });
+
+    // 2. Get Net Cash Flow (Cashier In - Cashier Out)
+    // We join with CASHIERS to ensure we only get logs for this event's cashiers
+    const cashQuery = pool.query({
+      text: `
+        SELECT
+          COALESCE(SUM(CASE WHEN transaction_type = 'TOPUP' THEN amount ELSE 0 END), 0) AS total_in,
+          COALESCE(SUM(CASE WHEN transaction_type = 'REFUND' THEN amount ELSE 0 END), 0) AS total_out
+        FROM cash_ledger cl
+        JOIN cashiers c ON cl.cashier_id = c.cashier_id
+        WHERE c.event_id = $1
+      `,
+      values: [event_id],
+    });
+
+    // 3. Get Sales Flow (Total Sales, Commission, Owed)
+    // We join with ORDERS to filter by event_id
+    const salesQuery = pool.query({
+      text: `
+        SELECT
+          COALESCE(SUM(t.total_amount), 0) as total_sales,
+          COALESCE(SUM(t.organizer_share), 0) as total_commission,
+          COALESCE(SUM(t.stall_share), 0) as total_owed
+        FROM transactions t
+        JOIN orders o ON t.order_id = o.order_id
+        WHERE o.event_id = $1
+      `,
+      values: [event_id],
+    });
+
+    // 4. Get Per-Stall Breakdown
+    const stallsQuery = pool.query({
+      text: `
+        SELECT 
+          s.stall_id,
+          s.stall_name,
+          COALESCE(SUM(t.total_amount), 0) as stall_sales,
+          COALESCE(SUM(t.organizer_share), 0) as stall_commission,
+          COALESCE(SUM(t.stall_share), 0) as stall_revenue
+        FROM stalls s
+        LEFT JOIN orders o ON s.stall_id = o.stall_id AND o.event_id = $1
+        LEFT JOIN transactions t ON o.order_id = t.order_id
+        WHERE s.event_id = $1
+        GROUP BY s.stall_id, s.stall_name
+        ORDER BY stall_sales DESC
+      `,
+      values: [event_id]
+    });
+
+    const [cashRes, salesRes, stallsRes] = await Promise.all([cashQuery, salesQuery, stallsQuery]);
+
+    res.json({
+      cash: cashRes.rows[0],
+      sales: salesRes.rows[0],
+      stalls: stallsRes.rows
+    });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error fetching financial summary' });
+  }
+});
 
 module.exports = router;
