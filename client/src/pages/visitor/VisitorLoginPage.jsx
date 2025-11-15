@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { publicAxios } from '../../utils/apiAdapters';
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams, Link } from 'react-router-dom';
 import { useVisitorAuth } from '../../context/VisitorAuthContext';
 
 // --- STYLED COMPONENTS ---
@@ -35,7 +35,7 @@ const CommonInputStyles = `
   transition: all 0.2s ease-in-out;
   &:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); }
 `;
-const PhoneInput = styled.input` ${CommonInputStyles} `;
+const IdentifierInput = styled.input` ${CommonInputStyles} `; // Renamed from PhoneInput
 const PinInput = styled.input`
   ${CommonInputStyles}
   font-size: 1.5rem; text-align: center; letter-spacing: 0.5em; font-family: monospace;
@@ -57,15 +57,47 @@ const SwitchAccountButton = styled.button`
   &:hover { text-decoration: underline; }
 `;
 
+// --- NEW STYLES for Login Type Toggle ---
+const ToggleGroup = styled.div`
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-bottom: 20px;
+`;
+const ToggleButton = styled.button`
+  padding: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  background-color: ${props => props.active ? '#eef2ff' : '#f8fafc'};
+  color: ${props => props.active ? '#4f46e5' : '#64748b'};
+  border-color: ${props => props.active ? '#6366f1' : '#e2e8f0'};
+`;
+
+const RegisterLink = styled(Link)`
+  display: block;
+  margin-top: 24px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6366f1;
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+`;
+
+// --- COMPONENT ---
+
 export default function VisitorLoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clubSlug } = useParams();
   const { login } = useVisitorAuth();
 
-  const [phone, setPhone] = useState('');
+  const [loginType, setLoginType] = useState('phone'); // 'phone' or 'member'
+  const [identifier, setIdentifier] = useState('');
   const [pin, setPin] = useState('');
-  const [isPhoneCached, setIsPhoneCached] = useState(false); // Track if we are in "PIN ONLY" mode
+  const [isIdentifierCached, setIsIdentifierCached] = useState(false); // Renamed
 
   const [eventId, setEventId] = useState('');
   const [stallId, setStallId] = useState('');
@@ -79,11 +111,13 @@ export default function VisitorLoginPage() {
     if (eId) setEventId(eId);
     if (sId) setStallId(sId);
 
-    // --- MAGIC: Check for cached phone number ---
-    const cachedPhone = localStorage.getItem('activ_visitor_phone');
-    if (cachedPhone) {
-      setPhone(cachedPhone);
-      setIsPhoneCached(true); // Enable PIN-only mode
+    // --- UPDATED: Check for generic cached login ---
+    const cachedIdentifier = localStorage.getItem('activ_visitor_identifier');
+    const cachedLoginType = localStorage.getItem('activ_visitor_loginType');
+    if (cachedIdentifier && cachedLoginType) {
+      setIdentifier(cachedIdentifier);
+      setLoginType(cachedLoginType);
+      setIsIdentifierCached(true); // Enable PIN-only mode
     }
 
     if (clubSlug) {
@@ -97,26 +131,29 @@ export default function VisitorLoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (phone.length < 10) { setError("Invalid phone number."); return; }
+    if (identifier.length === 0) { setError("Please enter your Phone or Member ID."); return; }
     if (pin.length !== 6) { setError("Please enter your 6-digit PIN."); return; }
     
     setError(null);
     setLoading(true);
 
     try {
-      // We ALWAYS send phone + pin to backend. 
-      // If isPhoneCached is true, 'phone' comes from state (loaded from localStorage)
+      // --- UPDATED: Send loginType and identifier ---
       const res = await publicAxios.post('/visitor/login', {
-        visitor_phone: phone,
+        loginType: loginType,
+        identifier: identifier,
         event_id: eventId,
         pin: pin
       });
 
-      // Success! Cache phone for next time (redundant if already cached, but safe)
-      localStorage.setItem('activ_visitor_phone', phone);
+      // --- UPDATED: Cache both loginType and identifier ---
+      localStorage.setItem('activ_visitor_loginType', loginType);
+      localStorage.setItem('activ_visitor_identifier', identifier);
       
       login(res.data.wallet, res.data.token);
-      navigate(stallId ? `/v/stall/${stallId}` : '/v/wallet'); // Redirect
+      
+      // Navigate to wallet page if no stall is specified
+      navigate(stallId ? `/v/stall/${stallId}` : '/v/wallet'); 
 
     } catch (err) {
       console.error("Login error:", err);
@@ -129,14 +166,27 @@ export default function VisitorLoginPage() {
   };
 
   const clearCache = () => {
-    localStorage.removeItem('activ_visitor_phone');
-    setPhone('');
-    setIsPhoneCached(false);
+    // --- UPDATED: Clear new local storage keys ---
+    localStorage.removeItem('activ_visitor_identifier');
+    localStorage.removeItem('activ_visitor_loginType');
+    setIdentifier('');
+    setLoginType('phone'); // Reset to default
+    setIsIdentifierCached(false);
     setError(null);
   };
 
-  // Helper to mask phone number: 987******10
-  const maskPhone = (p) => p.length === 10 ? `${p.slice(0,3)}****${p.slice(7)}` : p;
+  // Helper to mask identifier
+  const maskIdentifier = (id) => id.length === 10 ? `${id.slice(0,3)}****${id.slice(7)}` : id;
+
+  const getSubtitle = () => {
+    if (isIdentifierCached) {
+      return <>Enter PIN for <strong>{maskIdentifier(identifier)}</strong></>
+    }
+    if (loginType === 'phone') {
+      return 'Enter your registered phone and PIN to access your wallet.'
+    }
+    return 'Enter your Member ID and PIN to access your wallet.'
+  };
 
   return (
     <PageContainer>
@@ -144,26 +194,40 @@ export default function VisitorLoginPage() {
         {clubBranding?.logo_url ? <ClubLogo src={clubBranding.logo_url} /> : <div style={{fontSize: '3rem', marginBottom: 16}}>🔐</div>}
         
         <WelcomeTitle>
-          {isPhoneCached ? 'Welcome Back!' : 'Visitor Login'}
+          {isIdentifierCached ? 'Welcome Back!' : 'Visitor Login'}
         </WelcomeTitle>
         
-        <Subtitle>
-          {isPhoneCached 
-            ? <>Enter PIN for <strong>{maskPhone(phone)}</strong></>
-            : 'Enter your registered phone and PIN to access your wallet.'}
-        </Subtitle>
+        <Subtitle>{getSubtitle()}</Subtitle>
         
         {error && <ErrorMessage>{error}</ErrorMessage>}
 
         <Form onSubmit={handleLogin}>
-          {/* ONLY SHOW PHONE INPUT IF NOT CACHED */}
-          {!isPhoneCached && (
+          {/* --- Show login type toggle ONLY if not cached --- */}
+          {!isIdentifierCached && (
+            <ToggleGroup>
+              <ToggleButton type="button" active={loginType === 'phone'} onClick={() => setLoginType('phone')}>
+                Use Phone
+              </ToggleButton>
+              <ToggleButton type="button" active={loginType === 'member'} onClick={() => setLoginType('member')}>
+                Use Member ID
+              </ToggleButton>
+            </ToggleGroup>
+          )}
+
+          {/* --- Show identifier input ONLY if not cached --- */}
+          {!isIdentifierCached && (
             <InputGroup>
-              <Label htmlFor="phone">Mobile Number</Label>
-              <PhoneInput 
-                id="phone" type="tel" value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="98765 43210" autoComplete="tel" required={!isPhoneCached}
+              <Label htmlFor="identifier">
+                {loginType === 'phone' ? 'Mobile Number' : 'Membership ID'}
+              </Label>
+              <IdentifierInput 
+                id="identifier" 
+                type={loginType === 'phone' ? 'tel' : 'text'}
+                value={identifier}
+                onChange={(e) => setIdentifier(loginType === 'phone' ? e.target.value.replace(/\D/g, '').slice(0, 10) : e.target.value)}
+                placeholder={loginType === 'phone' ? '98765 43210' : 'Your Member ID'}
+                autoComplete={loginType === 'phone' ? 'tel' : 'off'}
+                required={!isIdentifierCached}
               />
             </InputGroup>
           )}
@@ -173,20 +237,25 @@ export default function VisitorLoginPage() {
             <PinInput 
               id="pin" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6}
               value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="••••••" autoComplete="off" required autoFocus={isPhoneCached}
+              placeholder="••••••" autoComplete="off" required autoFocus={isIdentifierCached}
             />
           </InputGroup>
 
-          <LoginButton type="submit" disabled={loading || phone.length < 10 || pin.length < 6 || !eventId}>
+          <LoginButton type="submit" disabled={loading || identifier.length < 1 || pin.length < 6 || !eventId}>
             {loading ? 'Verifying...' : 'Unlock Wallet →'}
           </LoginButton>
         </Form>
 
-        {isPhoneCached && (
+        {isIdentifierCached && (
           <SwitchAccountButton onClick={clearCache}>
-            Not {maskPhone(phone)}? Switch Account
+            Not {maskIdentifier(identifier)}? Switch Account
           </SwitchAccountButton>
         )}
+
+        <RegisterLink to={`/${clubSlug}/v/register?event=${eventId}`}>
+          Don't have a wallet? <strong>Register here</strong>
+        </RegisterLink>
+
       </LoginCard>
     </PageContainer>
   );

@@ -2,14 +2,20 @@ const express = require('express');
 const pool = require('../config/db');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs'); // Need bcrypt for PINs
+const bcrypt = require('bcryptjs');
 const visitorAuthMiddleware = require('../middleware/visitorAuthMiddleware');
 
-// === 1. VISITOR REGISTRATION (At Entrance - Generates PIN) ===
+// === 1. VISITOR REGISTRATION (USER-SET PIN) ===
+// This is the updated endpoint to match your new registration page.
 router.post('/register', async (req, res) => {
-  const { visitor_phone, event_id, visitor_name } = req.body;
-  if (!visitor_phone || !event_id) {
-    return res.status(400).json({ error: 'Phone number and Event ID are required' });
+  const { visitor_phone, event_id, visitor_name, pin, membership_id } = req.body;
+
+  // --- Validation ---
+  if (!visitor_phone || !event_id || !pin) {
+    return res.status(400).json({ error: 'Phone number, Event ID, and PIN are required' });
+  }
+  if (pin.length !== 6) {
+    return res.status(400).json({ error: 'PIN must be 6 digits' });
   }
 
   try {
@@ -23,27 +29,25 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'This phone number is already registered for this event.' });
     }
 
-    // 2. Generate a 6-digit PIN
-    const rawPin = Math.floor(100000 + Math.random() * 900000).toString();
+    // 2. Hash the user-provided PIN
     const salt = await bcrypt.genSalt(10);
-    const pinHash = await bcrypt.hash(rawPin, salt);
+    const pinHash = await bcrypt.hash(pin, salt);
 
-    // 3. Create Wallet with PIN
+    // 3. Create Wallet with user's PIN and optional info
     const insertQuery = {
       text: `
-        INSERT INTO wallets (event_id, visitor_phone, pin_hash, status, visitor_name)
-        VALUES ($1, $2, $3, 'ACTIVE', $4)
-        RETURNING wallet_id, visitor_phone, visitor_name
+        INSERT INTO wallets (event_id, visitor_phone, pin_hash, status, visitor_name, membership_id)
+        VALUES ($1, $2, $3, 'ACTIVE', $4, $5)
+        RETURNING wallet_id, visitor_phone, visitor_name, membership_id
       `,
-      values: [event_id, visitor_phone, pinHash, visitor_name || 'Guest']
+      values: [event_id, visitor_phone, pinHash, visitor_name || null, membership_id || null]
     };
     const { rows: [newWallet] } = await pool.query(insertQuery);
 
-    // 4. Return the RAW PIN once (user must remember it!)
+    // 4. Return success message (NO PIN IS RETURNED)
     res.status(201).json({
       message: 'Registration successful',
-      wallet: newWallet,
-      pin: rawPin // ONLY time this is shown
+      wallet: newWallet
     });
 
   } catch (err) {
@@ -52,29 +56,41 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// === 2. VISITOR LOGIN (At Stalls - Requires PIN) ===
+// === 2. VISITOR LOGIN (Phone or Member ID) ===
+// This is the updated login endpoint to handle both phone and member ID.
 router.post('/login', async (req, res) => {
-  const { visitor_phone, event_id, pin } = req.body; // Added 'pin'
-  if (!visitor_phone || !event_id || !pin) {
-    return res.status(400).json({ error: 'Phone, Event ID, and 6-digit PIN are required' });
+  const { loginType, identifier, pin, event_id } = req.body;
+
+  if (!identifier || !pin || !event_id || !loginType) {
+    return res.status(400).json({ error: 'Identifier, PIN, Event ID, and Login Type are required' });
   }
 
   try {
-    // 1. Fetch wallet and branding info
+    let queryText = `
+      SELECT w.*, e.event_name, o.club_name, o.logo_url as club_logo_url, o.url_slug
+      FROM wallets w
+      JOIN events e ON w.event_id = e.event_id
+      JOIN organizers o ON e.organizer_id = o.organizer_id
+      WHERE w.event_id = $2 AND w.status = 'ACTIVE' AND 
+    `;
+    
+    // --- Dynamic Query ---
+    if (loginType === 'member') {
+      queryText += 'w.membership_id = $1';
+    } else {
+      // Default to phone
+      queryText += 'w.visitor_phone = $1';
+    }
+
     const query = {
-      text: `
-        SELECT w.*, e.event_name, o.club_name, o.logo_url as club_logo_url, o.url_slug
-        FROM wallets w
-        JOIN events e ON w.event_id = e.event_id
-        JOIN organizers o ON e.organizer_id = o.organizer_id
-        WHERE w.visitor_phone = $1 AND w.event_id = $2 AND w.status = 'ACTIVE'
-      `,
-      values: [visitor_phone, event_id]
+      text: queryText,
+      values: [identifier, event_id]
     };
+
     const { rows: [wallet] } = await pool.query(query);
 
     if (!wallet) {
-      return res.status(404).json({ error: 'Wallet not found. Please register at the entrance.' });
+      return res.status(404).json({ error: 'Wallet not found. Please register first.' });
     }
 
     // 2. Verify PIN
@@ -83,7 +99,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid PIN.' });
     }
 
-    // 3. Generate Token
+    // 3. Generate Token (Payload is unchanged, already contains branding)
     const payload = {
       visitor: {
         wallet_id: wallet.wallet_id,
@@ -92,7 +108,8 @@ router.post('/login', async (req, res) => {
         event_name: wallet.event_name,
         club_name: wallet.club_name,
         club_logo_url: wallet.club_logo_url,
-        url_slug: wallet.url_slug
+        url_slug: wallet.url_slug,
+        membership_id: wallet.membership_id // Add membership_id to token
       }
     };
 
@@ -111,18 +128,21 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// --- All routes below this are protected (Unchanged) ---
+// --- All routes below this are protected ---
 router.use(visitorAuthMiddleware);
 
+// GET /api/visitor/me
+// No change needed. This fetches the latest wallet info.
 router.get('/me', (req, res) => {
+  // req.visitor comes from the token, req.wallet comes from DB middleware
   res.status(200).json({
-    ...req.wallet,
-    event_name: req.visitor.event_name,
-    club_name: req.visitor.club_name,
-    club_logo_url: req.visitor.club_logo_url
+    ...req.wallet, // Full wallet data (balance, etc.)
+    ...req.visitor   // Branding data from token (club_name, etc.)
   });
 });
 
+// GET /api/visitor/stall/:stall_id/menu
+// No change needed.
 router.get('/stall/:stall_id/menu', async (req, res) => {
   const { stall_id } = req.params;
   try {
@@ -140,6 +160,8 @@ router.get('/stall/:stall_id/menu', async (req, res) => {
   }
 });
 
+// POST /api/visitor/stall/:stall_id/pay
+// No change needed. This logic is solid.
 router.post('/stall/:stall_id/pay', async (req, res) => {
     const { stall_id } = req.params;
     const { items } = req.body; 
@@ -211,6 +233,7 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
         });
         await Promise.all(itemInsertPromises);
 
+        // This creates the financial record (the transaction split)
         await client.query(
         `INSERT INTO transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
         VALUES ($1, $2, $3, $4, $5)`,
@@ -251,6 +274,8 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     }
 });
 
+// GET /api/visitor/log
+// No change needed. This endpoint is perfect for the new wallet page.
 router.get('/log', async (req, res) => {
   const wallet_id = req.wallet.wallet_id;
   try {
