@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const cashierAuthMiddleware = require('../middleware/cashierAuthMiddleware');
 
 // [PUBLIC] Cashier Login
+// This route is unchanged and remains correct.
 router.post('/login', async (req, res) => {
   const { cashier_name, pin, event_id } = req.body;
   if (!cashier_name || !pin || !event_id) {
@@ -32,83 +33,126 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// All routes below this are now protected
 router.use(cashierAuthMiddleware);
 
+// --- HELPER FUNCTION to build the dynamic wallet query ---
+const getWalletQuery = (identifier, identifierType, eventId) => {
+  const isPhone = identifierType === 'phone';
+  const queryText = `
+    SELECT wallet_id, current_balance, visitor_phone, visitor_name, membership_id
+    FROM wallets 
+    WHERE event_id = $1 AND ${isPhone ? 'visitor_phone' : 'membership_id'} = $2 AND status = 'ACTIVE'
+  `;
+  return {
+    text: queryText,
+    values: [eventId, identifier]
+  };
+};
+
 // [PROTECTED] Check Balance
+// --- UPDATED to use dynamic identifier ---
 router.post('/check-balance', async (req, res) => {
-  const { visitor_phone } = req.body;
+  const { identifier, identifierType } = req.body;
+  if (!identifier || !identifierType) {
+    return res.status(400).json({ error: 'Identifier and identifier type are required.' });
+  }
   try {
-    const resDb = await pool.query("SELECT current_balance FROM wallets WHERE event_id = $1 AND visitor_phone = $2 AND status = 'ACTIVE'", [req.cashier.event_id, visitor_phone]);
-    res.json({ current_balance: resDb.rows[0]?.current_balance || 0 });
+    const query = getWalletQuery(identifier, identifierType, req.cashier.event_id);
+    const { rows: [wallet] } = await pool.query(query);
+    
+    if (!wallet) {
+      return res.status(404).json({ error: 'Active wallet not found. Please ask the visitor to register.' });
+    }
+    res.json({ current_balance: wallet.current_balance, name: wallet.visitor_name, phone: wallet.visitor_phone });
   } catch (err) {
     res.status(500).json({ error: 'Check balance failed' });
   }
 });
 
-// [PROTECTED] Top-Up (Handles both registered and unregistered users)
+// [PROTECTED] Top-Up
+// --- UPDATED to remove wallet creation/PIN generation ---
 router.post('/topup', async (req, res) => {
-  const { visitor_phone, amount, visitor_name, membership_id } = req.body;
-  if (!visitor_phone || !amount) return res.status(400).json({ error: 'Phone and amount required' });
+  const { identifier, identifierType, amount } = req.body;
+  if (!identifier || !identifierType || !amount) {
+    return res.status(400).json({ error: 'Identifier, type, and amount are required' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // 1. Lock & Check existing wallet
-    const { rows: [existing] } = await client.query(
-      'SELECT wallet_id, pin_hash FROM wallets WHERE event_id = $1 AND visitor_phone = $2 FOR UPDATE',
-      [req.cashier.event_id, visitor_phone]
-    );
 
-    let walletId, newBalance, newPin = null, pinHash = existing?.pin_hash;
+    // 1. Find the wallet dynamically
+    const query = getWalletQuery(identifier, identifierType, req.cashier.event_id);
+    // Add FOR UPDATE to lock the row
+    const { rows: [existing] } = await client.query(query.text + ' FOR UPDATE', query.values);
 
-    if (existing) {
-      // CASE A: ALREADY REGISTERED (Just top up)
-      const update = await client.query(
-        `UPDATE wallets SET current_balance = current_balance + $1, status = 'ACTIVE', visitor_name = COALESCE($2, visitor_name), membership_id = COALESCE($3, membership_id) WHERE wallet_id = $4 RETURNING current_balance`,
-        [amount, visitor_name || null, membership_id || null, existing.wallet_id]
-      );
-      walletId = existing.wallet_id;
-      newBalance = update.rows[0].current_balance;
-    } else {
-      // CASE B: NOT REGISTERED (Create new wallet & PIN)
-      newPin = Math.floor(100000 + Math.random() * 900000).toString();
-      pinHash = await bcrypt.hash(newPin, 10);
-      const insert = await client.query(
-        `INSERT INTO wallets (event_id, visitor_phone, current_balance, status, visitor_name, membership_id, pin_hash) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6) RETURNING wallet_id, current_balance`,
-        [req.cashier.event_id, visitor_phone, amount, visitor_name || null, membership_id || null, pinHash]
-      );
-      walletId = insert.rows[0].wallet_id;
-      newBalance = insert.rows[0].current_balance;
+    // --- LOGIC CHANGE: Check if wallet exists ---
+    if (!existing) {
+      throw new Error('Wallet not found. Please ask the visitor to register first.');
     }
 
-    // 2. Log transaction
+    // 2. Wallet exists, so just update it
+    const update = await client.query(
+      `UPDATE wallets SET current_balance = current_balance + $1 WHERE wallet_id = $2 RETURNING current_balance, visitor_name`,
+      [amount, existing.wallet_id]
+    );
+    
+    const walletId = existing.wallet_id;
+    const { current_balance: newBalance, visitor_name } = update.rows[0];
+
+    // 3. Log transaction
     await client.query(`INSERT INTO cash_ledger (wallet_id, cashier_id, transaction_type, amount) VALUES ($1, $2, 'TOPUP', $3)`, [walletId, req.cashier.id, amount]);
     await client.query('COMMIT');
 
-    res.json({ message: 'Top-up successful', new_balance: newBalance, new_pin: newPin });
+    // --- LOGIC CHANGE: Removed `new_pin` from response ---
+    res.json({ message: 'Top-up successful', new_balance: newBalance, name: visitor_name || 'Visitor' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error("Topup error:", err);
+    // Send specific 404 error back to frontend
+    if (err.message.includes('Wallet not found')) {
+      return res.status(404).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Top-up failed' });
   } finally {
-    client.release(); // <--- PREVENTS SERVER HANGS
+    client.release();
   }
 });
 
 // [PROTECTED] Refund
+// --- UPDATED to use dynamic identifier ---
 router.post('/refund', async (req, res) => {
-  const { visitor_phone } = req.body;
+  const { identifier, identifierType } = req.body;
+  if (!identifier || !identifierType) {
+    return res.status(400).json({ error: 'Identifier and identifier type are required.' });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: [wallet] } = await client.query("SELECT wallet_id, current_balance FROM wallets WHERE event_id = $1 AND visitor_phone = $2 AND status = 'ACTIVE' FOR UPDATE", [req.cashier.event_id, visitor_phone]);
-    if (!wallet || wallet.current_balance <= 0) throw new Error('No active balance to refund');
+
+    // 1. Find the wallet dynamically
+    const query = getWalletQuery(identifier, identifierType, req.cashier.event_id);
+    const { rows: [wallet] } = await client.query(query.text + ' FOR UPDATE', query.values);
+
+    if (!wallet || wallet.current_balance <= 0) {
+      throw new Error('No active balance to refund');
+    }
     
+    // 2. Set balance to 0 and status to 'ENDED'
     await client.query("UPDATE wallets SET current_balance = 0, status = 'ENDED' WHERE wallet_id = $1", [wallet.wallet_id]);
+    
+    // 3. Log the refund
     await client.query("INSERT INTO cash_ledger (wallet_id, cashier_id, transaction_type, amount) VALUES ($1, $2, 'REFUND', $3)", [wallet.wallet_id, req.cashier.id, wallet.current_balance]);
     
     await client.query('COMMIT');
-    res.json({ message: 'Refund successful', refundedAmount: wallet.current_balance });
+    res.json({ 
+      message: 'Refund successful', 
+      refundedAmount: wallet.current_balance, 
+      name: wallet.visitor_name, 
+      isMember: !!wallet.membership_id 
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(400).json({ error: err.message || 'Refund failed' });
@@ -117,7 +161,8 @@ router.post('/refund', async (req, res) => {
   }
 });
 
-// [PROTECTED] Log
+// [PROTECTED] Cashier's Personal Log
+// This route is unchanged and remains correct for the "Cashier Log"
 router.get('/log', async (req, res) => {
   try {
     const [logs, summary] = await Promise.all([
@@ -129,5 +174,75 @@ router.get('/log', async (req, res) => {
     res.status(500).json({ error: 'Log fetch failed' });
   }
 });
+
+// --- NEW ENDPOINT: Member Refund Log ---
+router.get('/member-logs', async (req, res) => {
+  const { event_id } = req.cashier;
+  try {
+    const query = {
+      text: `
+        SELECT 
+          w.wallet_id,
+          w.visitor_name,
+          w.visitor_phone,
+          w.membership_id,
+          cl.amount AS refunded_amount,
+          cl.created_at AS refund_date
+        FROM wallets w
+        JOIN cash_ledger cl ON w.wallet_id = cl.wallet_id
+        WHERE w.event_id = $1
+          AND w.membership_id IS NOT NULL
+          AND w.status = 'ENDED'
+          AND cl.transaction_type = 'REFUND'
+        ORDER BY cl.created_at DESC;
+      `,
+      values: [event_id]
+    };
+    const { rows } = await pool.query(query);
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error("Error fetching member logs:", err);
+    res.status(500).json({ error: 'Failed to fetch member logs' });
+  }
+});
+
+// --- NEW ENDPOINT: Member Transaction History ---
+router.get('/member-log/:wallet_id', async (req, res) => {
+  const { wallet_id } = req.params;
+  const { event_id } = req.cashier;
+
+  try {
+    // First, verify this wallet is a member wallet in the cashier's event
+    const { rows: [wallet] } = await pool.query(
+      `SELECT wallet_id, visitor_name, membership_id FROM wallets WHERE wallet_id = $1 AND event_id = $2 AND membership_id IS NOT NULL`,
+      [wallet_id, event_id]
+    );
+
+    if (!wallet) {
+      return res.status(404).json({ error: 'Member wallet not found.' });
+    }
+
+    // Now, fetch all their transactions (similar to visitorRoutes.js)
+    const query = {
+      text: `
+        SELECT cl.cash_ledger_id as id, cl.transaction_type as type, cl.amount, cl.created_at, NULL as stall_name
+        FROM cash_ledger cl WHERE cl.wallet_id = $1
+        UNION ALL
+        SELECT o.order_id as id, 'PURCHASE' as type, o.total_amount as amount, o.created_at, s.stall_name
+        FROM orders o JOIN stalls s ON o.stall_id = s.stall_id WHERE o.wallet_id = $1
+        ORDER BY created_at DESC;
+      `,
+      values: [wallet_id]
+    };
+    const { rows: logs } = await pool.query(query);
+    
+    res.status(200).json({ wallet, logs });
+
+  } catch (err) {
+    console.error("Error fetching member transaction log:", err.message);
+    res.status(500).json({ error: 'Server error fetching member log' });
+  }
+});
+
 
 module.exports = router;

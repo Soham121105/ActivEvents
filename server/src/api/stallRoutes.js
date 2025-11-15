@@ -5,8 +5,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ... [KEEP EXISTING /login ROUTE AS IS for now] ...
-// actually, let's update the login query to fetch the new fields just in case
+// [PUBLIC] Stall Login
+// --- UPDATED for 2-step temporary password flow ---
 router.post('/login', async (req, res) => {
   const { phone, password, event_id } = req.body;
   if (!phone || !password || !event_id) {
@@ -14,11 +14,11 @@ router.post('/login', async (req, res) => {
   }
   try {
     const query = {
-      // --- UPDATED QUERY to include logo_url and description ---
       text: `
         SELECT 
           s.stall_id, s.stall_name, s.owner_phone, s.event_id, 
           s.commission_rate, s.password_hash, s.logo_url, s.description,
+          s.is_temp_password, -- NEW: Check this flag
           o.url_slug, o.club_name, o.logo_url as club_logo_url
         FROM stalls s
         JOIN events e ON s.event_id = e.event_id
@@ -29,10 +29,23 @@ router.post('/login', async (req, res) => {
     };
     const result = await pool.query(query);
     if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid credentials' });
+    
     const stall = result.rows[0];
     const isMatch = await bcrypt.compare(password, stall.password_hash);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
+    // --- NEW LOGIC ---
+    // If it's a temp password, send a "change required" response with a short-lived token
+    if (stall.is_temp_password) {
+      const payload = { temp_stall: { id: stall.stall_id } }; // Special, limited-scope token
+      const tempToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+      return res.status(200).json({ 
+        requiresPasswordChange: true, 
+        tempToken: tempToken
+      });
+    }
+
+    // --- Regular Login ---
     const payload = {
       stall: {
         id: stall.stall_id,
@@ -41,7 +54,6 @@ router.post('/login', async (req, res) => {
         event_id: stall.event_id, 
         commission_rate: stall.commission_rate,
         url_slug: stall.url_slug,
-        // Add new fields to token payload if needed, or just return them
         logo_url: stall.logo_url,
         description: stall.description,
         club_name: stall.club_name,
@@ -58,6 +70,46 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// [PUBLIC-ISH] Set New Password
+// This route is used *only* by the first-time login flow.
+// It requires the special tempToken from the login route.
+router.post('/set-password', async (req, res) => {
+  const { tempToken, newPassword } = req.body;
+  if (!tempToken || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required.' });
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    if (!decoded.temp_stall) {
+      throw new Error('Not a valid temporary token.');
+    }
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });
+  }
+
+  try {
+    const stallId = decoded.temp_stall.id;
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update the password and set the temp_password flag to false
+    await pool.query(
+      `UPDATE stalls SET password_hash = $1, is_temp_password = false WHERE stall_id = $2`,
+      [hashedPassword, stallId]
+    );
+
+    res.status(200).json({ message: 'Password updated successfully. Please log in again.' });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error updating password.' });
+  }
+});
+
+
+// This middleware now protects all routes below
 router.use(authMiddleware);
 
 // --- NEW: Route to update stall details ---
@@ -70,7 +122,6 @@ router.put('/me', async (req, res) => {
       values: [logo_url, description, stall_id]
     };
     const { rows: [updatedStall] } = await pool.query(query);
-    // Return the updated stall info so the frontend can update its context
     res.json(updatedStall);
   } catch (err) {
     console.error(err.message);
@@ -78,9 +129,8 @@ router.put('/me', async (req, res) => {
   }
 });
 
-// ... [KEEP EXISTING /transactions ROUTE AS IS] ...
+// [PROTECTED] Get stall transactions
 router.get('/transactions', async (req, res) => {
-    // ... (Keep your existing transactions route code here)
     const stall_id = req.stall.id; 
     try {
         const summaryQuery = pool.query({

@@ -37,7 +37,7 @@ import VisitorLayout from './VisitorLayout.jsx'
 import VisitorRegistrationPage from './pages/visitor/VisitorRegistrationPage.jsx'
 import VisitorLoginPage from './pages/visitor/VisitorLoginPage.jsx'
 import VisitorMenuPage from './pages/visitor/VisitorMenuPage.jsx'
-// import VisitorWalletPage from './pages/visitor/VisitorWalletPage.jsx' // Coming next!
+import VisitorWalletPage from './pages/visitor/VisitorWalletPage.jsx' // THIS LINE IS NOW UNCOMMENTED
 
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -88,7 +88,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 {/* These routes are protected by VisitorLayout and require login */}
                 <Route element={<VisitorLayout />}>
                   <Route path="/v/stall/:stall_id" element={<VisitorMenuPage />} />
-                  {/* <Route path="/v/wallet" element={<VisitorWalletPage />} /> */}
+                  <Route path="/v/wallet" element={<VisitorWalletPage />} /> {/* THIS LINE IS NOW UNCOMMENTED */}
                 </Route>
 
               </Routes>

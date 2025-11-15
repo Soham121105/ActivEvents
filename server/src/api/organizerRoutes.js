@@ -3,6 +3,8 @@ const pool = require('../config/db');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+// --- NEW: Import admin auth middleware ---
+const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 
 /**
  * [PUBLIC GET] /api/organizer/public-events/:urlSlug
@@ -32,7 +34,7 @@ router.get('/public-events/:urlSlug', async (req, res) => {
 
 /**
  * [POST] /api/organizer/login
- * The main login for the Event Manager (Super Admin)
+ * --- UPDATED for temporary password flow ---
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -43,6 +45,7 @@ router.post('/login', async (req, res) => {
   try {
     // 1. Find the organizer by email
     const query = {
+      // --- NEW: Select is_temp_password flag ---
       text: 'SELECT * FROM organizers WHERE email = $1',
       values: [email],
     };
@@ -59,6 +62,17 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
+    // --- NEW LOGIC: Check if password is temporary ---
+    if (organizer.is_temp_password) {
+      // Issue a short-lived token for password reset
+      const payload = { temp_admin: { id: organizer.organizer_id } };
+      const tempToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+      return res.status(200).json({
+        requiresPasswordChange: true,
+        tempToken: tempToken
+      });
+    }
+
     // 3. Create the "Smart" JWT with branding info
     const payload = {
       organizer: {
@@ -66,7 +80,7 @@ router.post('/login', async (req, res) => {
         name: organizer.club_name,
         email: organizer.email,
         logo_url: organizer.logo_url,
-        url_slug: organizer.url_slug // Send the slug to the frontend
+        url_slug: organizer.url_slug
       }
     };
 
@@ -83,6 +97,45 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- NEW ROUTE: Set New Password for Admin ---
+router.post('/set-password', async (req, res) => {
+  const { tempToken, newPassword } = req.body;
+  if (!tempToken || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    if (!decoded.temp_admin) { // Must be a temp admin token
+      throw new Error('Not a valid temporary token.');
+    }
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });
+  }
+
+  try {
+    const adminId = decoded.temp_admin.id;
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password and set flag to false
+    await pool.query(
+      `UPDATE organizers SET password_hash = $1, is_temp_password = false WHERE organizer_id = $2`,
+      [hashedPassword, adminId]
+    );
+
+    res.status(200).json({ message: 'Password updated successfully. Please log in again.' });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Server error updating password.' });
   }
 });
 

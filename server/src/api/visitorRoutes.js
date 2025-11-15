@@ -132,17 +132,16 @@ router.post('/login', async (req, res) => {
 router.use(visitorAuthMiddleware);
 
 // GET /api/visitor/me
-// No change needed. This fetches the latest wallet info.
+// No change needed.
 router.get('/me', (req, res) => {
-  // req.visitor comes from the token, req.wallet comes from DB middleware
   res.status(200).json({
-    ...req.wallet, // Full wallet data (balance, etc.)
-    ...req.visitor   // Branding data from token (club_name, etc.)
+    ...req.wallet,
+    ...req.visitor
   });
 });
 
 // GET /api/visitor/stall/:stall_id/menu
-// No change needed.
+// No change needed. This route correctly respects `is_available = true`.
 router.get('/stall/:stall_id/menu', async (req, res) => {
   const { stall_id } = req.params;
   try {
@@ -161,7 +160,7 @@ router.get('/stall/:stall_id/menu', async (req, res) => {
 });
 
 // POST /api/visitor/stall/:stall_id/pay
-// No change needed. This logic is solid.
+// --- UPDATED to handle inventory checks and decrementing ---
 router.post('/stall/:stall_id/pay', async (req, res) => {
     const { stall_id } = req.params;
     const { items } = req.body; 
@@ -175,9 +174,15 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        // --- 1. PRE-TRANSACTION CHECK (Check availability & stock) ---
         const itemIds = items.map(item => item.item_id);
         const priceCheckQuery = {
-        text: `SELECT item_id, item_name, price FROM menu_items WHERE item_id = ANY($1::uuid[]) AND stall_id = $2 AND is_available = true`,
+        // --- UPDATED to fetch inventory fields ---
+        text: `
+            SELECT item_id, item_name, price, is_available, track_inventory, stock_quantity 
+            FROM menu_items 
+            WHERE item_id = ANY($1::uuid[]) AND stall_id = $2
+        `,
         values: [itemIds, stall_id]
         };
         const { rows: dbItems } = await client.query(priceCheckQuery);
@@ -186,87 +191,130 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
         const validatedItems = [];
 
         for (const cartItem of items) {
-        const dbItem = dbItems.find(i => i.item_id === cartItem.item_id);
-        if (!dbItem) {
-            throw new Error('An item in your cart is no longer available. Please refresh.');
-        }
-        calculatedTotal += parseFloat(dbItem.price) * parseInt(cartItem.quantity, 10);
-        validatedItems.push({
-            ...cartItem,
-            item_name: dbItem.item_name,
-            price: parseFloat(dbItem.price)
-        });
+            const dbItem = dbItems.find(i => i.item_id === cartItem.item_id);
+            // Check if item exists and is marked as available
+            if (!dbItem || !dbItem.is_available) {
+                throw new Error(`'${dbItem?.item_name || 'An item'}' is no longer available. Please refresh your menu.`);
+            }
+            
+            // --- NEW: INVENTORY CHECK ---
+            if (dbItem.track_inventory) {
+                if (parseInt(dbItem.stock_quantity, 10) < parseInt(cartItem.quantity, 10)) {
+                    throw new Error(`Not enough stock for '${dbItem.item_name}'. Only ${dbItem.stock_quantity} left.`);
+                }
+            }
+            
+            calculatedTotal += parseFloat(dbItem.price) * parseInt(cartItem.quantity, 10);
+            validatedItems.push({
+                ...cartItem,
+                item_name: dbItem.item_name,
+                price: parseFloat(dbItem.price),
+                track_inventory: dbItem.track_inventory // Pass this along
+            });
         }
 
+        // Check wallet balance
         if (parseFloat(wallet.current_balance) < calculatedTotal) {
-        throw new Error('Insufficient funds. Please top-up your wallet.');
+            throw new Error('Insufficient funds. Please top-up your wallet.');
         }
 
+        // --- 2. START DATABASE TRANSACTION ---
+        await client.query('BEGIN');
+
+        // 3. Decrement wallet balance
+        const { rows: [updatedWallet] } = await client.query(
+            "UPDATE wallets SET current_balance = current_balance - $1 WHERE wallet_id = $2 AND current_balance >= $1 RETURNING current_balance",
+            [calculatedTotal, wallet.wallet_id]
+        );
+
+        if (!updatedWallet) {
+            throw new Error('Insufficient funds. Please top-up your wallet.');
+        }
+
+        // 4. Create the Order
+        const { rows: [newOrder] } = await client.query(
+            `INSERT INTO orders (event_id, stall_id, wallet_id, total_amount, order_status, payment_type)
+            VALUES ($1, $2, $3, $4, 'PENDING', 'TOKEN') RETURNING order_id, created_at`,
+            [event_id, stall_id, wallet.wallet_id, calculatedTotal]
+        );
+
+        // 5. Insert order items AND Decrement Stock
+        const itemUpdatePromises = validatedItems.map(item => {
+            // Promise 1: Insert the order item
+            const insertItemPromise = client.query(
+                `INSERT INTO order_items (order_id, item_id, item_name, quantity, price_per_item)
+                VALUES ($1, $2, $3, $4, $5)`,
+                [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price]
+            );
+
+            const promises = [insertItemPromise];
+
+            // --- NEW: Promise 2 (Conditional): Decrement stock ---
+            if (item.track_inventory) {
+                const updateStockPromise = client.query(
+                  `
+                    UPDATE menu_items 
+                    SET 
+                      stock_quantity = stock_quantity - $1,
+                      -- Automatically set to unavailable if stock runs out
+                      is_available = CASE 
+                        WHEN (stock_quantity - $1) <= 0 THEN false
+                        ELSE is_available 
+                      END
+                    WHERE item_id = $2 AND track_inventory = true
+                  `,
+                  [item.quantity, item.item_id]
+                );
+                promises.push(updateStockPromise);
+            }
+            
+            return Promise.all(promises);
+        });
+        
+        await Promise.all(itemUpdatePromises);
+
+        // 6. Get commission rate and create financial transaction record
         const { rows: [stall] } = await client.query('SELECT commission_rate FROM stalls WHERE stall_id = $1', [stall_id]);
         const commission_rate = parseFloat(stall.commission_rate);
         const organizer_share = calculatedTotal * commission_rate;
         const stall_share = calculatedTotal - organizer_share;
 
-        await client.query('BEGIN');
-
-        const { rows: [updatedWallet] } = await client.query(
-        "UPDATE wallets SET current_balance = current_balance - $1 WHERE wallet_id = $2 AND current_balance >= $1 RETURNING current_balance",
-        [calculatedTotal, wallet.wallet_id]
-        );
-
-        if (!updatedWallet) {
-        throw new Error('Insufficient funds. Please top-up your wallet.');
-        }
-
-        const { rows: [newOrder] } = await client.query(
-        `INSERT INTO orders (event_id, stall_id, wallet_id, total_amount, order_status, payment_type)
-        VALUES ($1, $2, $3, $4, 'PENDING', 'TOKEN') RETURNING order_id, created_at`,
-        [event_id, stall_id, wallet.wallet_id, calculatedTotal]
-        );
-
-        const itemInsertPromises = validatedItems.map(item => {
-        return client.query(
-            `INSERT INTO order_items (order_id, item_id, item_name, quantity, price_per_item)
-            VALUES ($1, $2, $3, $4, $5)`,
-            [newOrder.order_id, item.item_id, item.item_name, item.quantity, item.price]
-        );
-        });
-        await Promise.all(itemInsertPromises);
-
-        // This creates the financial record (the transaction split)
         await client.query(
-        `INSERT INTO transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
-        VALUES ($1, $2, $3, $4, $5)`,
-        [newOrder.order_id, calculatedTotal, commission_rate, organizer_share, stall_share]
+            `INSERT INTO transactions (order_id, total_amount, commission_rate, organizer_share, stall_share)
+            VALUES ($1, $2, $3, $4, $5)`,
+            [newOrder.order_id, calculatedTotal, commission_rate, organizer_share, stall_share]
         );
 
+        // --- 7. COMMIT TRANSACTION ---
         await client.query('COMMIT');
 
+        // 8. Emit to KDS (after commit)
         const orderForKDS = {
-        order_id: newOrder.order_id,
-        created_at: newOrder.created_at,
-        stall_id: stall_id,
-        customer_display_name: wallet.visitor_name || wallet.visitor_phone,
-        total_amount: calculatedTotal,
-        order_status: 'PENDING',
-        payment_type: 'TOKEN',
-        items: validatedItems,
-        visitor_phone: wallet.visitor_phone,
-        membership_id: wallet.membership_id
+            order_id: newOrder.order_id,
+            created_at: newOrder.created_at,
+            stall_id: stall_id,
+            customer_display_name: wallet.visitor_name || wallet.visitor_phone,
+            total_amount: calculatedTotal,
+            order_status: 'PENDING',
+            payment_type: 'TOKEN',
+            items: validatedItems,
+            visitor_phone: wallet.visitor_phone,
+            membership_id: wallet.membership_id
         };
         req.io.to(stall_id).emit('new_order', orderForKDS);
 
         res.status(201).json({
-        message: 'Payment successful!',
-        orderId: newOrder.order_id,
-        new_balance: updatedWallet.current_balance
+            message: 'Payment successful!',
+            orderId: newOrder.order_id,
+            new_balance: updatedWallet.current_balance
         });
 
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('TRANSACTION FAILED:', err.message);
-        if (err.message.includes('Insufficient funds') || err.message.includes('no longer available')) {
-        return res.status(400).json({ error: err.message });
+        // Send specific, user-friendly errors
+        if (err.message.includes('Insufficient funds') || err.message.includes('no longer available') || err.message.includes('Not enough stock')) {
+            return res.status(400).json({ error: err.message });
         }
         res.status(500).json({ error: 'Payment failed. Please try again.' });
     } finally {
@@ -275,7 +323,7 @@ router.post('/stall/:stall_id/pay', async (req, res) => {
 });
 
 // GET /api/visitor/log
-// No change needed. This endpoint is perfect for the new wallet page.
+// No change needed.
 router.get('/log', async (req, res) => {
   const wallet_id = req.wallet.wallet_id;
   try {

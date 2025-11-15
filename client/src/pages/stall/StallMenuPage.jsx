@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { stallAxios } from '../../utils/apiAdapters';
 
-// --- STYLED COMPONENTS ---
+// --- STYLED COMPONENTS (with additions) ---
 const Container = styled.div`
   max-width: 1200px;
   margin: 0 auto;
@@ -43,6 +43,7 @@ const MenuCard = styled.div`
   border: 1px solid #e5e7eb; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   transition: all 0.2s; opacity: ${props => props.available ? 1 : 0.6};
   filter: ${props => props.available ? 'none' : 'grayscale(80%)'};
+  display: flex; flex-direction: column; // Makes footer stick to bottom
   &:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); transform: translateY(-2px); }
 `;
 
@@ -61,8 +62,18 @@ const Badge = styled.span`
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 `;
 
+// --- NEW: Stock Badge ---
+const StockBadge = styled.span`
+  position: absolute; top: 12px; right: 12px;
+  padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 800;
+  background-color: ${props => props.low ? '#fef2f2' : 'rgba(255, 255, 255, 0.9)'};
+  color: ${props => props.low ? '#b91c1c' : '#1f2937'};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+`;
+
 const CardContent = styled.div`
   padding: 20px;
+  display: flex; flex-direction: column; flex-grow: 1; // Makes footer stick to bottom
 `;
 
 const CardHeader = styled.div`
@@ -77,16 +88,22 @@ const ItemPrice = styled.span`
 const ItemDesc = styled.p`
   color: #64748b; font-size: 0.95rem; line-height: 1.5; margin: 0 0 20px 0;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  flex-grow: 1; // Allows footer to stick to bottom
 `;
 
 const CardFooter = styled.div`
   display: flex; justify-content: space-between; align-items: center;
   padding-top: 20px; border-top: 1px solid #f1f5f9;
+  margin-top: auto; // Sticks to bottom
 `;
 
-// --- FANCY TOGGLE SWITCH ---
+const CardActions = styled.div`
+  display: flex; gap: 8px;
+`;
+
 const ToggleWrapper = styled.label`
-  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
+  opacity: ${props => props.disabled ? 0.5 : 1};
 `;
 const ToggleLabel = styled.span`
   font-size: 0.875rem; font-weight: 600;
@@ -105,23 +122,33 @@ const ToggleSwitch = styled.div`
   }
 `;
 
-const DeleteButton = styled.button`
-  background: none; border: none; color: #94a3b8; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+const ActionButton = styled.button`
+  background: none; border: none; color: #6b7280; font-weight: 600; font-size: 0.9rem; cursor: pointer;
   padding: 8px 12px; border-radius: 8px;
-  &:hover { background-color: #fef2f2; color: #ef4444; }
+  &:hover { background-color: #f3f4f6; color: #1f2937; }
+  &.delete:hover { background-color: #fef2f2; color: #ef4444; }
 `;
 
-// --- MODAL FOR ADDING ITEMS ---
+// --- NEW: Restock Button ---
+const RestockButton = styled.button`
+  background: #e0e7ff; color: #4338ca; border: none; padding: 8px 12px; border-radius: 8px;
+  font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+  &:hover { background-color: #c7d2fe; }
+`;
+
+// --- MODAL FOR ADDING/EDITING ITEMS ---
 const ModalOverlay = styled.div`
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
-  display: flex; justify-content: center; align-items: center; z-index: 50;
+  display: flex; justify-content: center; align-items: flex-start; /* Aligns to top */
+  padding-top: 5vh;
+  z-index: 50; overflow-y: auto;
   opacity: ${props => props.isOpen ? 1 : 0};
   visibility: ${props => props.isOpen ? 'visible' : 'hidden'};
   transition: all 0.2s;
 `;
 const Modal = styled.div`
-  background: white; width: 100%; max-width: 500px;
+  background: white; width: 100%; max-width: 600px;
   border-radius: 20px; padding: 32px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
   transform: translateY(${props => props.isOpen ? '0' : '20px'});
   transition: all 0.3s;
@@ -129,14 +156,13 @@ const Modal = styled.div`
 const ModalTitle = styled.h2`
   margin-top: 0; font-size: 1.5rem; color: #0f172a;
 `;
-
-// --- FORM ELEMENTS ---
 const Form = styled.form`display: flex; flex-direction: column; gap: 20px;`;
 const FormGroup = styled.div`display: flex; flex-direction: column; gap: 8px;`;
 const Label = styled.label`font-size: 0.875rem; font-weight: 700; color: #334155;`;
 const Input = styled.input`
   padding: 12px 16px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 1rem;
   &:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px #e0e7ff; }
+  &:disabled { background: #f8fafc; color: #9ca3af; }
 `;
 const Select = styled.select`
   padding: 12px 16px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 1rem; background-color: white;
@@ -155,19 +181,75 @@ const CancelButton = styled.button`
   &:hover { background-color: #f8fafc; }
 `;
 
+// --- NEW: Checkbox for inventory ---
+const CheckboxWrapper = styled.label`
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer;
+`;
+const Checkbox = styled.input`
+  width: 20px; height: 20px; accent-color: #4f46e5;
+`;
+
+// --- NEW: Restock Modal ---
+const RestockModal = ({ item, onClose, onRestock }) => {
+  const [quantity, setQuantity] = useState('');
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onRestock(item.item_id, parseInt(quantity, 10));
+  };
+
+  return (
+    <ModalOverlay isOpen={true} onClick={onClose}>
+      <Modal isOpen={true} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+        <ModalTitle>Restock Item</ModalTitle>
+        <p style={{ color: '#6b7280' }}>How many <strong>{item.item_name}</strong> are you adding to the inventory?</p>
+        <Form onSubmit={handleSubmit}>
+          <FormGroup>
+            <Label>Quantity to Add</Label>
+            <Input 
+              type="number" 
+              min="1"
+              value={quantity} 
+              onChange={e => setQuantity(e.target.value)} 
+              placeholder="e.g., 50" 
+              autoFocus 
+              required
+            />
+          </FormGroup>
+          <ButtonGroup>
+            <CancelButton type="button" onClick={onClose}>Cancel</CancelButton>
+            <SubmitButton type="submit">Restock</SubmitButton>
+          </ButtonGroup>
+        </Form>
+      </Modal>
+    </ModalOverlay>
+  );
+};
+
 
 export default function StallMenuPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // --- UPDATED: Modal state ---
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null); // null for "Add Mode", item object for "Edit Mode"
 
-  // Form State
+  // --- NEW: Restock modal state ---
+  const [restockItem, setRestockItem] = useState(null);
+
+  // --- Form State ---
   const [itemName, setItemName] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isVeg, setIsVeg] = useState('veg');
   const [isSpicy, setIsSpicy] = useState(false);
+  // --- NEW: Form state for inventory ---
+  const [trackInventory, setTrackInventory] = useState(false);
+  const [stockQuantity, setStockQuantity] = useState(0);
+
 
   useEffect(() => { fetchMenu(); }, []);
 
@@ -179,38 +261,89 @@ export default function StallMenuPage() {
     finally { setLoading(false); }
   };
 
-  const handleAddItem = async (e) => {
+  // --- UPDATED: Combined Add/Edit Handler ---
+  const handleSubmitItem = async (e) => {
     e.preventDefault();
     try {
-      const newItem = { 
+      const newItemData = { 
         item_name: itemName, 
         price: parseFloat(price), 
         description, 
         image_url: imageUrl, 
         is_veg: isVeg, 
         is_spicy: isSpicy, 
-        allergens: [] 
+        allergens: [],
+        track_inventory: trackInventory,
+        stock_quantity: trackInventory ? parseInt(stockQuantity, 10) : 0
       };
-      const res = await stallAxios.post('/menu', newItem);
-      setMenuItems([...menuItems, res.data]);
+
+      if (editingItem) {
+        // --- EDIT MODE ---
+        const res = await stallAxios.put(`/menu/${editingItem.item_id}`, newItemData);
+        setMenuItems(menuItems.map(item => item.item_id === editingItem.item_id ? res.data : item));
+      } else {
+        // --- ADD MODE ---
+        const res = await stallAxios.post('/menu', newItemData);
+        setMenuItems([...menuItems, res.data]);
+      }
       closeModal();
-    } catch (err) { alert("Failed to add item. Please check all fields."); }
+    } catch (err) { alert("Failed to save item. Please check all fields."); }
+  };
+
+  // --- NEW: Open modal in "Add Mode" ---
+  const openAddModal = () => {
+    setEditingItem(null);
+    setItemName('');
+    setPrice('');
+    setDescription('');
+    setImageUrl('');
+    setIsVeg('veg');
+    setIsSpicy(false);
+    setTrackInventory(false);
+    setStockQuantity(0);
+    setIsModalOpen(true);
+  };
+
+  // --- NEW: Open modal in "Edit Mode" ---
+  const openEditModal = (item) => {
+    setEditingItem(item);
+    setItemName(item.item_name);
+    setPrice(item.price);
+    setDescription(item.description || '');
+    setImageUrl(item.image_url || '');
+    setIsVeg(item.is_veg);
+    setIsSpicy(item.is_spicy || false);
+    setTrackInventory(item.track_inventory || false);
+    setStockQuantity(item.stock_quantity || 0);
+    setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    // Reset form
-    setItemName(''); setPrice(''); setDescription(''); setImageUrl(''); setIsVeg('veg'); setIsSpicy(false);
+    setEditingItem(null);
   };
 
   const handleToggleStock = async (item) => {
-    // Optimistic update for instant UI feedback
+    // This is now only for non-inventory items
+    if (item.track_inventory) return; 
+
     const updatedItems = menuItems.map(i => i.item_id === item.item_id ? {...i, is_available: !i.is_available} : i);
     setMenuItems(updatedItems);
     try { await stallAxios.put(`/menu/${item.item_id}/stock`, { is_available: !item.is_available }); } 
     catch (err) { 
       setMenuItems(menuItems); // Revert on error
       alert("Failed to update stock status."); 
+    }
+  };
+
+  // --- NEW: Restock Handler ---
+  const handleRestock = async (itemId, quantity) => {
+    try {
+      const res = await stallAxios.post(`/menu/${itemId}/restock`, { quantity });
+      setMenuItems(menuItems.map(item => item.item_id === itemId ? res.data : item));
+      setRestockItem(null); // Close modal
+    } catch (err) {
+      alert("Failed to restock item.");
     }
   };
 
@@ -231,9 +364,9 @@ export default function StallMenuPage() {
       <Header>
         <TitleSection>
           <PageTitle>Menu Management</PageTitle>
-          <PageSubtitle>{menuItems.length} items visible to customers</PageSubtitle>
+          <PageSubtitle>{menuItems.length} items created</PageSubtitle>
         </TitleSection>
-        <AddButton onClick={() => setIsModalOpen(true)}>
+        <AddButton onClick={openAddModal}>
           <span style={{fontSize: '1.5rem', lineHeight: 1}}>+</span> Add New Item
         </AddButton>
       </Header>
@@ -243,6 +376,11 @@ export default function StallMenuPage() {
           <MenuCard key={item.item_id} available={item.is_available}>
             <CardImage src={item.image_url || 'https://placehold.co/400x300/e2e8f0/94a3b8?text=No+Image'}>
                <Badge type={item.is_veg}>{item.is_veg}</Badge>
+               {item.track_inventory && (
+                 <StockBadge low={item.stock_quantity < 10 && item.is_available}>
+                   {item.is_available ? `${item.stock_quantity} Left` : 'Sold Out'}
+                 </StockBadge>
+               )}
             </CardImage>
             <CardContent>
               <CardHeader>
@@ -253,11 +391,12 @@ export default function StallMenuPage() {
               </CardHeader>
               <ItemDesc>{item.description || 'No description provided.'}</ItemDesc>
               <CardFooter>
-                <ToggleWrapper>
+                <ToggleWrapper disabled={item.track_inventory}>
                   <input 
                     type="checkbox" 
                     checked={item.is_available} 
                     onChange={() => handleToggleStock(item)} 
+                    disabled={item.track_inventory}
                     style={{display: 'none'}} 
                   />
                   <ToggleSwitch checked={item.is_available} />
@@ -265,22 +404,30 @@ export default function StallMenuPage() {
                     {item.is_available ? 'IN STOCK' : 'SOLD OUT'}
                   </ToggleLabel>
                 </ToggleWrapper>
-                <DeleteButton onClick={() => handleDelete(item.item_id)}>Delete</DeleteButton>
+                
+                <CardActions>
+                  {item.track_inventory && (
+                    <RestockButton onClick={() => setRestockItem(item)}>Restock</RestockButton>
+                  )}
+                  <ActionButton onClick={() => openEditModal(item)}>Edit</ActionButton>
+                  <ActionButton className="delete" onClick={() => handleDelete(item.item_id)}>Delete</ActionButton>
+                </CardActions>
               </CardFooter>
             </CardContent>
           </MenuCard>
         ))}
       </MenuGrid>
 
-      {/* --- ADD ITEM MODAL --- */}
+      {/* --- ADD/EDIT ITEM MODAL --- */}
       <ModalOverlay isOpen={isModalOpen} onClick={(e) => e.target === e.currentTarget && closeModal()}>
         <Modal isOpen={isModalOpen}>
-          <ModalTitle>Add New Menu Item</ModalTitle>
-          <Form onSubmit={handleAddItem}>
+          <ModalTitle>{editingItem ? 'Edit Menu Item' : 'Add New Menu Item'}</ModalTitle>
+          <Form onSubmit={handleSubmitItem}>
             <FormGroup>
               <Label>Item Name *</Label>
               <Input required value={itemName} onChange={e => setItemName(e.target.value)} placeholder="e.g. Chicken Tikka" autoFocus />
             </FormGroup>
+            
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px'}}>
               <FormGroup>
                 <Label>Price (₹) *</Label>
@@ -296,26 +443,58 @@ export default function StallMenuPage() {
                 </Select>
               </FormGroup>
             </div>
+            
             <FormGroup>
               <Label>Description</Label>
               <TextArea value={description} onChange={e => setDescription(e.target.value)} placeholder="Short, appealing description..." />
             </FormGroup>
+            
             <FormGroup>
               <Label>Image URL</Label>
               <Input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" />
             </FormGroup>
+
             <label style={{display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#334155', cursor: 'pointer'}}>
-              <input type="checkbox" checked={isSpicy} onChange={e => setIsSpicy(e.target.checked)} style={{width: 20, height: 20, accentColor: '#ef4444'}} />
+              <Checkbox type="checkbox" checked={isSpicy} onChange={e => setIsSpicy(e.target.checked)} />
               <span>Is this item Spicy? 🌶️</span>
             </label>
+            
+            {/* --- NEW INVENTORY FIELDS --- */}
+            <hr style={{border: 'none', borderTop: '1px solid #f1f5f9'}}/>
+            <CheckboxWrapper>
+              <Checkbox type="checkbox" checked={trackInventory} onChange={e => setTrackInventory(e.target.checked)} />
+              <span style={{fontWeight: 600, color: '#334155'}}>Track Inventory</span>
+            </CheckboxWrapper>
+            
+            <FormGroup>
+              <Label>Initial Stock Quantity</Label>
+              <Input 
+                type="number" 
+                min="0"
+                value={stockQuantity} 
+                onChange={e => setStockQuantity(e.target.value)} 
+                disabled={!trackInventory}
+                placeholder={trackInventory ? "e.g., 100" : "Enable tracking to set stock"}
+              />
+            </FormGroup>
+            {/* --- END INVENTORY FIELDS --- */}
+
             <ButtonGroup>
               <CancelButton type="button" onClick={closeModal}>Cancel</CancelButton>
-              <SubmitButton type="submit">Save Item</SubmitButton>
+              <SubmitButton type="submit">{editingItem ? 'Save Changes' : 'Save Item'}</SubmitButton>
             </ButtonGroup>
           </Form>
         </Modal>
       </ModalOverlay>
 
+      {/* --- NEW RESTOCK MODAL --- */}
+      {restockItem && (
+        <RestockModal 
+          item={restockItem} 
+          onClose={() => setRestockItem(null)} 
+          onRestock={handleRestock} 
+        />
+      )}
     </Container>
   );
 }
