@@ -33,10 +33,16 @@ export const AdminAuthProvider = ({ children }) => {
   const login = (adminData, token) => {
     localStorage.setItem('admin_token', token);
     localStorage.setItem('admin_data', JSON.stringify(adminData));
+    // --- THIS IS THE FIX ---
+    // We must set loading: true *before* setting the token
+    // to prevent the old component from re-fetching before navigation.
+    setLoading(true); 
     setToken(token);
     setAdmin(adminData);
-    // --- CHANGE: Set header ONLY on adminAxios ---
     adminAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // And set loading: false *after* the new token is set
+    setLoading(false);
+    // --- END OF FIX ---
   };
 
   const logout = () => {

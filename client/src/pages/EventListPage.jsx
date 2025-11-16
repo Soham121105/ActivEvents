@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-// --- CHANGE: Use admin adapter ---
 import { adminAxios } from '../utils/apiAdapters';
 import { Link } from 'react-router-dom';
 
-// ... (Keep all styled components exactly the same) ...
+// ... (All styled components remain the same) ...
 const PageHeaderContainer = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; @media (max-width: 768px) { flex-direction: column; align-items: flex-start; gap: 16px; } `;
 const PageHeader = styled.h1` font-size: 2.25rem; font-weight: 800; color: #111827; margin-top: 0; margin-bottom: 0; `;
 const Button = styled(Link)` background-color: #2563eb; color: white; font-weight: 600; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-size: 1rem; text-decoration: none; transition: background-color 0.2s; &:hover { background-color: #1d4ed8; } @media (max-width: 768px) { width: 100%; text-align: center; } `;
@@ -22,6 +21,7 @@ const EventCardDate = styled.p` font-size: 0.875rem; color: #6b7280; margin: 0; 
 const EventCardFooter = styled.div` margin-top: auto; padding-top: 16px; display: flex; justify-content: flex-end; `;
 const DeleteButton = styled.button` background: transparent; border: none; color: #9ca3af; font-weight: 500; font-size: 0.875rem; cursor: pointer; padding: 4px; transition: color 0.2s; &:hover { color: #ef4444; text-decoration: underline; } `;
 
+
 export default function EventListPage() {
   const [events, setEvents] = useState([]); 
   const [loading, setLoading] = useState(true);
@@ -29,12 +29,17 @@ export default function EventListPage() {
 
   const fetchEvents = async () => {
     try {
-      // --- CHANGE: Use adminAxios ---
       const response = await adminAxios.get('/events');
       setEvents(response.data); 
     } catch (err) {
-      console.error("Error fetching events:", err);
-      setError("Failed to fetch events.");
+      // --- THIS IS THE FIX ---
+      // If the error is an AuthError, we don't set state
+      // because the component is already being unmounted.
+      if (err.name !== 'AuthError') {
+        console.error("Error fetching events:", err);
+        setError("Failed to fetch events.");
+      }
+      // --- END OF FIX ---
     } finally {
       setLoading(false);
     }
@@ -42,7 +47,7 @@ export default function EventListPage() {
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, []); // Empty array ensures this runs only once on mount
 
   const handleDeleteEvent = async (e, eventId) => {
     e.preventDefault(); 
@@ -53,14 +58,18 @@ export default function EventListPage() {
     }
 
     try {
-      // --- CHANGE: Use adminAxios ---
       await adminAxios.delete(`/events/${eventId}`);
       setEvents(prevEvents => prevEvents.filter(event => event.event_id !== eventId));
     } catch (err) {
-      console.error("Error deleting event:", err);
-      alert("Failed to delete the event.");
+      if (err.name !== 'AuthError') {
+        console.error("Error deleting event:", err);
+        alert("Failed to delete the event.");
+      }
     }
   };
+
+  if (loading) return <LoadingText>Loading events...</LoadingText>;
+  if (error) return <p style={{ color: 'red' }}>{error}</p>;
 
   return (
     <> 
@@ -86,23 +95,21 @@ export default function EventListPage() {
       
       <Section style={{ marginTop: '24px' }}>
         <SectionTitle>Upcoming Events</SectionTitle>
-        {loading ? <LoadingText>Loading events...</LoadingText> : error ? <p style={{ color: 'red' }}>{error}</p> : (
-          <EventGrid>
-            {events.length === 0 ? <p>No events found. Click "Create New Event" to start!</p> : (
-              events.map((event) => (
-                <EventCard key={event.event_id} to={`/event/${event.event_id}`}>
-                  <div>
-                    <EventCardName>{event.event_name}</EventCardName>
-                    <EventCardDate>{new Date(event.event_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</EventCardDate>
-                  </div>
-                  <EventCardFooter>
-                    <DeleteButton onClick={(e) => handleDeleteEvent(e, event.event_id)}>Delete Event</DeleteButton>
-                  </EventCardFooter>
-                </EventCard>
-              ))
-            )}
-          </EventGrid>
-        )}
+        <EventGrid>
+          {events.length === 0 ? <p>No events found. Click "Create New Event" to start!</p> : (
+            events.map((event) => (
+              <EventCard key={event.event_id} to={`/event/${event.event_id}`}>
+                <div>
+                  <EventCardName>{event.event_name}</EventCardName>
+                  <EventCardDate>{new Date(event.event_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</EventCardDate>
+                </div>
+                <EventCardFooter>
+                  <DeleteButton onClick={(e) => handleDeleteEvent(e, event.event_id)}>Delete Event</DeleteButton>
+                </EventCardFooter>
+              </EventCard>
+            ))
+          )}
+        </EventGrid>
       </Section>
     </>
   );

@@ -1,5 +1,4 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-// --- CHANGE: Import stallAxios ---
 import { stallAxios } from '../utils/apiAdapters';
 
 const AuthContext = createContext();
@@ -14,11 +13,22 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // --- THIS INTERCEPTOR MUST BE ATTACHED UNCONDITIONALLY ---
+    const interceptor = stallAxios.interceptors.response.use(
+      response => response,
+      error => {
+        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+           logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    // --- END OF FIX ---
+
     const storedToken = localStorage.getItem('stall_token');
     const storedStall = localStorage.getItem('stall_data');
     
     if (storedToken) {
-      // --- CHANGE: Use stallAxios ---
       stallAxios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
       setToken(storedToken);
       
@@ -29,6 +39,9 @@ export const AuthProvider = ({ children }) => {
     } else {
       setLoading(false);
     }
+
+    // Clean up interceptor on unmount
+    return () => stallAxios.interceptors.response.eject(interceptor);
   }, []);
 
   const login = (stallData, token) => {
@@ -36,7 +49,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('stall_data', JSON.stringify(stallData));
     setToken(token);
     setStall(stallData);
-    // --- CHANGE: Use stallAxios ---
     stallAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   };
 
@@ -45,7 +57,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('stall_data');
     setToken(null);
     setStall(null);
-    // --- CHANGE: Use stallAxios ---
     delete stallAxios.defaults.headers.common['Authorization'];
   };
 

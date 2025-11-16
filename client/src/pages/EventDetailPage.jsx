@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'; // 1. Remove useRef
 import styled from 'styled-components';
 import { adminAxios } from '../utils/apiAdapters';
 import { useParams, Link } from 'react-router-dom';
 
-// --- STYLED COMPONENTS (No changes) ---
+// ... (All styled components remain the same) ...
 const DashboardContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -219,8 +219,6 @@ const EmptyState = styled.p`
 `;
 // --- END STYLES ---
 
-
-// --- HELPER FUNCTION ---
 const formatCurrency = (val) => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0
@@ -238,30 +236,29 @@ export default function EventDetailPage() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
 
-  // --- UPDATED: Robust data fetching ---
+  // 2. This is the new, safe data-fetching function
   const fetchEventData = async () => {
+    setLoading(true); 
+    setError(null); 
+
     try {
-      // Set loading true at the start
-      setLoading(true);
+      // 3. Fetch all CRITICAL data in parallel
+      const [eventRes, finRes] = await Promise.all([
+        adminAxios.get(`/events/${eventId}`),
+        adminAxios.get(`/events/${eventId}/financial-summary`)
+      ]);
 
-      // 1. Fetch event data (critical)
-      const eventRes = await adminAxios.get(`/events/${eventId}`);
       setEvent(eventRes.data);
-
-      // 2. Fetch financial summary (critical)
-      const finRes = await adminAxios.get(`/events/${eventId}/financial-summary`);
       setFinancials(finRes.data);
       
-      // 3. Fetch non-critical data (stalls)
+      // 4. Fetch non-critical data
       try {
         const stallsRes = await adminAxios.get(`/events/${eventId}/stalls`);
         setStalls(stallsRes.data);
       } catch (err) {
         console.warn("Could not load stalls:", err);
-        // Don't set a hard error, just log it
       }
       
-      // 4. Fetch non-critical data (cashiers)
       try {
         const cashiersRes = await adminAxios.get(`/events/${eventId}/cashiers`);
         setCashiers(cashiersRes.data);
@@ -269,7 +266,6 @@ export default function EventDetailPage() {
         console.warn("Could not load cashiers:", err);
       }
 
-      // 5. Fetch non-critical data (member logs)
       try {
         const memberLogsRes = await adminAxios.get(`/events/${eventId}/member-refund-logs`);
         setMemberLogs(memberLogsRes.data);
@@ -278,18 +274,20 @@ export default function EventDetailPage() {
       }
 
     } catch (err) {
-      // This catch block only runs if critical calls (event or financials) fail
+      // 5. If any *critical* fetch fails, set the main error state
+      // This will now only be hit for network errors, not auth errors
       console.error("Error fetching critical dashboard data:", err);
       setError("Failed to load event dashboard. Please refresh the page.");
     } finally {
+      // 6. Set loading to FALSE *after* all fetches are done.
       setLoading(false);
     }
   };
 
+  // 7. This simple useEffect is now correct
   useEffect(() => {
     fetchEventData();
   }, [eventId]);
-  // --- END OF UPDATE ---
 
   const handleDeleteCashier = async (cashierId) => {
     if (!window.confirm("Are you sure you want to delete this cashier?")) return;
@@ -317,10 +315,9 @@ export default function EventDetailPage() {
   // --- RENDER GUARDS ---
   if (loading) return <p style={{padding: 32}}>Loading dashboard...</p>;
   
-  // This is the main error state
   if (error) return <p style={{color: 'red', padding: 32}}>{error}</p>;
   
-  // This catches if the critical data failed to load
+  // This guard is still important for the *initial* load
   if (!event || !financials) {
     return <p style={{color: 'red', padding: 32}}>Failed to load essential event data. Please refresh.</p>;
   }

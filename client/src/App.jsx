@@ -25,6 +25,11 @@ const useAdminPrivateRoute = () => {
            // If we get an auth error, log out and redirect
            logout();
            navigate('/admin-login');
+           // --- THIS IS THE FIX ---
+           // Reject with a special error name so the component can catch it
+           // and know not to update its state.
+           return Promise.reject({ ...error, name: 'AuthError' });
+           // --- END OF FIX ---
         }
         return Promise.reject(error);
       }
@@ -35,6 +40,7 @@ const useAdminPrivateRoute = () => {
 };
 
 // --- MODERN STYLING ---
+// ... (All styled components are identical to your original file) ...
 const GlobalStyle = createGlobalStyle`
   :root {
     --primary: #6366f1; /* Indigo 500 */
@@ -61,7 +67,6 @@ const LayoutContainer = styled.div`
   overflow: hidden;
 `;
 
-// --- TOP NAVBAR ---
 const TopBar = styled.header`
   height: 64px;
   background-color: white;
@@ -123,7 +128,6 @@ const LogoutButton = styled.button`
   &:hover { background-color: #fecaca; }
 `;
 
-// --- SIDEBAR ---
 const Sidebar = styled.aside`
   width: 260px;
   background-color: var(--bg-sidebar);
@@ -209,6 +213,7 @@ const MobileOverlay = styled.div`
     z-index: 8;
   }
 `;
+
 
 function App() {
   useAdminPrivateRoute();
