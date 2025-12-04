@@ -1,11 +1,12 @@
-
 import { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { adminAxios } from '../utils/apiAdapters';
 import { useParams, Link } from 'react-router-dom';
+import { useAdminAuth } from '../context/AdminAuthContext'; // NEW: To get club slug
+import QRCode from 'react-qr-code'; // NEW: To generate QR
 
 // -----------------------------
-// Styled Components (merged)
+// Styled Components
 // -----------------------------
 const DashboardContainer = styled.div`
   display: flex;
@@ -199,7 +200,6 @@ const EmptyState = styled.p`
   font-size: 1rem;
 `;
 
-// SectionTitle (merged)
 const SectionTitle = styled.h2`
   font-size: 1.5rem;
   font-weight: 600;
@@ -208,7 +208,7 @@ const SectionTitle = styled.h2`
   margin-bottom: 16px;
 `;
 
-// Modal styles (from section 2)
+// Modal styles
 const fadeIn = keyframes`from { opacity: 0; } to { opacity: 1; }`;
 const ModalBackdrop = styled.div`
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -264,7 +264,6 @@ const getLogTitle = (log) => {
 };
 const getLogAmount = (log) => {
   const amount = parseFloat(log.amount || log.refunded_amount || log.total_amount || 0);
-  // For TOPUP we treat as positive; for PURCHASE/REFUND treat as out (negative)
   if (log.type === 'TOPUP') return `+${amount.toFixed(0)}`;
   return `-${amount.toFixed(0)}`;
 };
@@ -274,6 +273,7 @@ const getLogAmount = (log) => {
 // -----------------------------
 export default function EventDetailPage() {
   const { id: eventId } = useParams();
+  const { admin } = useAdminAuth(); // NEW: Access admin info for slug
   const [event, setEvent] = useState(null);
   const [financials, setFinancials] = useState(null); 
   const [cashiers, setCashiers] = useState([]);
@@ -284,10 +284,10 @@ export default function EventDetailPage() {
   const [activeTab, setActiveTab] = useState('overview');
 
   // Modal state for member history
-  const [modalData, setModalData] = useState(null); // { wallet, logs }
+  const [modalData, setModalData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  // Fetch all data: critical + non-critical
+  // Fetch all data
   const fetchEventData = async () => {
     setLoading(true);
     setError(null);
@@ -302,30 +302,20 @@ export default function EventDetailPage() {
       setEvent(eventRes.data);
       setFinancials(finRes.data);
 
-      // Non-critical: stalls, cashiers, member logs (separate try/catch each)
       try {
         const stallsRes = await adminAxios.get(`/events/${eventId}/stalls`);
         setStalls(stallsRes.data);
-      } catch (err) {
-        if (err.response?.status === 401) isAuthError = true;
-        else console.warn("Could not load stalls:", err);
-      }
+      } catch (err) { if (err.response?.status === 401) isAuthError = true; }
 
       try {
         const cashiersRes = await adminAxios.get(`/events/${eventId}/cashiers`);
         setCashiers(cashiersRes.data);
-      } catch (err) {
-        if (err.response?.status === 401) isAuthError = true;
-        else console.warn("Could not load cashiers:", err);
-      }
+      } catch (err) { if (err.response?.status === 401) isAuthError = true; }
 
       try {
         const memberLogsRes = await adminAxios.get(`/events/${eventId}/member-refund-logs`);
         setMemberLogs(memberLogsRes.data);
-      } catch (err) {
-        if (err.response?.status === 401) isAuthError = true;
-        else console.warn("Could not load member logs:", err);
-      }
+      } catch (err) { if (err.response?.status === 401) isAuthError = true; }
 
     } catch (err) {
       if (err.response?.status === 401) {
@@ -341,19 +331,15 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     fetchEventData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  // Delete handlers (unchanged logic)
   const handleDeleteCashier = async (cashierId) => {
     if (!window.confirm("Are you sure you want to delete this cashier?")) return;
     try {
       await adminAxios.delete(`/events/${eventId}/cashiers/${cashierId}`);
       setCashiers(prev => prev.filter(c => c.cashier_id !== cashierId));
     } catch (err) {
-      if (err.response?.status !== 401) {
-        alert("Failed to delete cashier.");
-      }
+      if (err.response?.status !== 401) alert("Failed to delete cashier.");
     }
   };
 
@@ -362,25 +348,19 @@ export default function EventDetailPage() {
     try {
       await adminAxios.delete(`/events/${eventId}/stalls/${stallId}`);
       setStalls(prev => prev.filter(s => s.stall_id !== stallId));
-      // Refresh financials as they are now out of date
       const finRes = await adminAxios.get(`/events/${eventId}/financial-summary`);
       setFinancials(finRes.data);
     } catch (err) {
-      if (err.response?.status !== 401) {
-        alert(err.response?.data?.error || "Failed to delete stall.");
-      }
+      if (err.response?.status !== 401) alert(err.response?.data?.error || "Failed to delete stall.");
     }
   };
 
-  // Member history modal handler (Option B behavior)
   const handleViewMemberHistory = async (wallet) => {
-    // wallet here is the row from memberRefunds list (has wallet_id etc)
     if (!wallet || !wallet.wallet_id) return;
     setModalLoading(true);
-    setModalData({ wallet, logs: [] }); // show basic wallet info immediately
+    setModalData({ wallet, logs: [] });
     try {
       const res = await adminAxios.get(`/events/${eventId}/member-log/${wallet.wallet_id}`);
-      // Expecting: { wallet, logs }
       setModalData(res.data);
     } catch (err) {
       alert('Failed to load member history.');
@@ -390,12 +370,15 @@ export default function EventDetailPage() {
     }
   };
 
-  // Render guards
+  // Generate Registration URL
+  const regUrl = admin?.url_slug 
+    ? `${window.location.origin}/${admin.url_slug}/v/register?event=${eventId}`
+    : '';
+
   if (loading) return <p style={{padding: 32}}>Loading dashboard...</p>;
   if (error) return <p style={{color: 'red', padding: 32}}>{error}</p>;
-  if (!event || !financials) return <p style={{color: 'red', padding: 32}}>Failed to load essential event data. Please refresh.</p>;
+  if (!event || !financials) return <p style={{color: 'red', padding: 32}}>Failed to load essential event data.</p>;
 
-  // Safe defaults (prevent null crashes)
   const cash = financials.cash || { total_in: 0, total_out: 0 };
   const sales = financials.sales || { total_sales: 0, total_commission: 0, total_owed: 0 };
   const financialStalls = financials.stalls || [];
@@ -430,9 +413,11 @@ export default function EventDetailPage() {
           <TabButton active={activeTab === 'stalls'} onClick={() => setActiveTab('stalls')}>Stall Management</TabButton>
           <TabButton active={activeTab === 'cashiers'} onClick={() => setActiveTab('cashiers')}>Cashier Staff</TabButton>
           <TabButton active={activeTab === 'memberLogs'} onClick={() => setActiveTab('memberLogs')}>Member Refund Logs</TabButton>
+          {/* NEW TAB */}
+          <TabButton active={activeTab === 'registration'} onClick={() => setActiveTab('registration')}>Visitor Registration</TabButton>
         </TabHeader>
 
-        {/* Overview */}
+        {/* Overview Tab */}
         {activeTab === 'overview' && (
           <TabContent>
             <StatsGrid>
@@ -494,7 +479,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* Stalls */}
+        {/* Stalls Tab */}
         {activeTab === 'stalls' && (
           <TabContent>
             <TableWrapper>
@@ -533,7 +518,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* Cashiers */}
+        {/* Cashiers Tab */}
         {activeTab === 'cashiers' && (
           <TabContent>
             <TableWrapper>
@@ -569,7 +554,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* Member Refund Logs (with "View History" action) */}
+        {/* Member Logs Tab */}
         {activeTab === 'memberLogs' && (
           <TabContent>
             <TableWrapper>
@@ -609,9 +594,34 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
+        {/* NEW: Visitor Registration Tab */}
+        {activeTab === 'registration' && (
+          <TabContent>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', padding: '48px 24px', textAlign: 'center' }}>
+              <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1f2937', margin: 0 }}>Visitor Registration QR Code</h3>
+              <p style={{ color: '#6b7280', maxWidth: '500px', margin: 0 }}>
+                Print this QR code or display it on a screen at the event entrance. 
+                Visitors can scan it to create their wallet and add funds.
+              </p>
+              
+              <div style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                {regUrl && <QRCode value={regUrl} size={256} />}
+              </div>
+
+              <div style={{ background: '#f9fafb', padding: '12px 24px', borderRadius: '8px', border: '1px solid #e5e7eb', fontFamily: 'monospace', color: '#4b5563', fontSize: '0.9rem', wordBreak: 'break-all' }}>
+                {regUrl}
+              </div>
+              
+              <Button as="a" href={regUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block' }}>
+                Open Registration Page
+              </Button>
+            </div>
+          </TabContent>
+        )}
+
       </TabContainer>
 
-      {/* Member History Modal (Option B) */}
+      {/* Member History Modal */}
       {modalData && (
         <ModalBackdrop onClick={() => setModalData(null)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -624,14 +634,12 @@ export default function EventDetailPage() {
 
             {modalLoading ? <p>Loading transactions...</p> : (
               <div>
-                {/* Wallet summary (if provided) */}
                 {modalData.wallet && (
                   <div style={{marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                     <div>
                       <div style={{fontWeight: 700}}>{modalData.wallet.visitor_name || 'N/A'}</div>
                       <div style={{color: '#6b7280'}}>{modalData.wallet.visitor_phone || ''} {modalData.wallet.membership_id ? `• ${modalData.wallet.membership_id}` : ''}</div>
                     </div>
-                    {/* If wallet has balance info show it */}
                     <div style={{textAlign: 'right'}}>
                       {modalData.wallet.balance !== undefined && <div style={{fontWeight: 700}}>{formatCurrency(modalData.wallet.balance)}</div>}
                       <div style={{color: '#9ca3af'}}>Wallet Balance</div>
