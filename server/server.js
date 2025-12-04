@@ -1,10 +1,11 @@
+// soham121105/activevents/ActivEvents-55e4fa74221b231355c1b2578dda110a8740b625/server/server.js
 // 1. Load .env AT THE VERY TOP
 require('dotenv').config(); 
 
 // 2. Import modules
 const express = require('express');
 const cors = require('cors');
-const pool = require('./src/config/db'); // Import DB after dotenv is loaded
+const pool = require('./src/config/db'); 
 
 // --- NEW SOCKET.IO IMPORTS ---
 const http = require('http');
@@ -23,18 +24,22 @@ const organizerRoutes = require('./src/api/organizerRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// --- NEW: Define the client URL dynamically ---
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"; // <-- NEW
+
 // --- NEW: Create HTTP server and Socket.io server ---
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: CLIENT_URL, // <-- FIXED LINE
     methods: ["GET", "POST"]
   }
 });
 
 // 5. Setup Middleware
-app.use(cors());
+app.use(cors({ origin: CLIENT_URL })); // <-- FIXED LINE
 app.use(express.json());
+
 
 // --- NEW: Middleware to attach 'io' to every request ---
 app.use((req, res, next) => {

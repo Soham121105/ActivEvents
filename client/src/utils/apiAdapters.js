@@ -1,8 +1,10 @@
+// client/src/utils/apiAdapters.js
 import axios from 'axios';
 
 // Base configuration for all adapters
 const config = {
-  baseURL: 'http://localhost:3001/api'
+  // Use VITE_API_URL from the .env or production environment variables
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 };
 
 // 1. Admin Adapter

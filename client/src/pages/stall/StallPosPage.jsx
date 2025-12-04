@@ -112,7 +112,13 @@ export default function StallPosPage() {
   useEffect(() => {
     fetchLiveOrders();
 
-    if (!socket) socket = io('http://localhost:3001');
+    // --- FIX: Dynamically determine the socket URL ---
+    // We strip '/api' because socket.io typically connects to the root URL
+    const SOCKET_URL = import.meta.env.VITE_API_URL 
+      ? import.meta.env.VITE_API_URL.replace('/api', '') 
+      : 'http://localhost:3001';
+
+    if (!socket) socket = io(SOCKET_URL);
 
     if (stall?.id) {
       socket.emit('join_stall_room', stall.id);
