@@ -28,20 +28,28 @@ export default function EventListPage() {
   const [error, setError] = useState(null);
 
   const fetchEvents = async () => {
+    // --- THIS IS THE FIX ---
+    let isAuthError = false; // 1. Add a flag
+    // --- END OF FIX ---
     try {
       const response = await adminAxios.get('/events');
       setEvents(response.data); 
     } catch (err) {
       // --- THIS IS THE FIX ---
-      // If the error is an AuthError, we don't set state
-      // because the component is already being unmounted.
-      if (err.name !== 'AuthError') {
+      if (err.name === 'AuthError') {
+        isAuthError = true; // 2. Set the flag if it's an AuthError
+      } else {
+        // Only set error if it's a *real* error, not an auth error
         console.error("Error fetching events:", err);
         setError("Failed to fetch events.");
       }
       // --- END OF FIX ---
     } finally {
-      setLoading(false);
+      // --- THIS IS THE FIX ---
+      if (!isAuthError) { // 3. Only set loading if the flag wasn't set
+        setLoading(false);
+      }
+      // --- END OF FIX ---
     }
   };
 
@@ -61,6 +69,7 @@ export default function EventListPage() {
       await adminAxios.delete(`/events/${eventId}`);
       setEvents(prevEvents => prevEvents.filter(event => event.event_id !== eventId));
     } catch (err) {
+      // This check is still correct
       if (err.name !== 'AuthError') {
         console.error("Error deleting event:", err);
         alert("Failed to delete the event.");

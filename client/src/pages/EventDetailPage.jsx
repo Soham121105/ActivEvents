@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react'; // 1. Remove useRef
-import styled from 'styled-components';
+
+import { useState, useEffect } from 'react';
+import styled, { keyframes } from 'styled-components';
 import { adminAxios } from '../utils/apiAdapters';
 import { useParams, Link } from 'react-router-dom';
 
-// ... (All styled components remain the same) ...
+// -----------------------------
+// Styled Components (merged)
+// -----------------------------
 const DashboardContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 32px;
 `;
-
 const HeaderSection = styled.div`
   display: flex;
   justify-content: space-between;
@@ -19,7 +21,6 @@ const HeaderSection = styled.div`
     gap: 16px;
   }
 `;
-
 const PageTitle = styled.h1`
   font-size: 2.5rem;
   font-weight: 800;
@@ -27,7 +28,6 @@ const PageTitle = styled.h1`
   margin: 0;
   line-height: 1.1;
 `;
-
 const EventMeta = styled.div`
   color: #6b7280;
   font-size: 1.1rem;
@@ -36,7 +36,6 @@ const EventMeta = styled.div`
   align-items: center;
   gap: 12px;
 `;
-
 const StatusBadge = styled.span`
   background-color: ${props => props.active ? '#dcfce7' : '#fee2e2'};
   color: ${props => props.active ? '#166534' : '#991b1b'};
@@ -46,7 +45,6 @@ const StatusBadge = styled.span`
   font-weight: 700;
   text-transform: uppercase;
 `;
-
 const ActionButtons = styled.div`
   display: flex;
   gap: 12px;
@@ -56,7 +54,6 @@ const ActionButtons = styled.div`
     & > a { flex: 1; text-align: center; }
   }
 `;
-
 const Button = styled(Link)`
   padding: 10px 20px;
   border-radius: 8px;
@@ -74,7 +71,6 @@ const Button = styled(Link)`
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   }
 `;
-
 const StatsGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -82,7 +78,6 @@ const StatsGrid = styled.div`
   @media (max-width: 1024px) { grid-template-columns: repeat(2, 1fr); }
   @media (max-width: 640px) { grid-template-columns: 1fr; }
 `;
-
 const StatCard = styled.div`
   background: white;
   padding: 24px;
@@ -92,7 +87,6 @@ const StatCard = styled.div`
   display: flex;
   flex-direction: column;
 `;
-
 const StatLabel = styled.span`
   font-size: 0.875rem;
   font-weight: 600;
@@ -100,7 +94,6 @@ const StatLabel = styled.span`
   text-transform: uppercase;
   letter-spacing: 0.05em;
 `;
-
 const StatValue = styled.span`
   font-size: 2.5rem;
   font-weight: 700;
@@ -111,13 +104,11 @@ const StatValue = styled.span`
   &.blue { color: #2563eb; }
   &.indigo { color: #4f46e5; }
 `;
-
 const StatSub = styled.span`
   font-size: 0.875rem;
   color: #9ca3af;
   margin-top: 4px;
 `;
-
 const TabContainer = styled.div`
   background: white;
   border: 1px solid #e5e7eb;
@@ -125,7 +116,6 @@ const TabContainer = styled.div`
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
   overflow: hidden;
 `;
-
 const TabHeader = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -133,7 +123,6 @@ const TabHeader = styled.div`
   padding: 12px 24px;
   border-bottom: 1px solid #e5e7eb;
 `;
-
 const TabButton = styled.button`
   padding: 10px 16px;
   font-size: 0.95rem;
@@ -149,21 +138,17 @@ const TabButton = styled.button`
     color: #4f46e5;
   }
 `;
-
 const TabContent = styled.div`
   padding: 24px;
 `;
-
 const TableWrapper = styled.div`
   overflow-x: auto;
 `;
-
 const Table = styled.table`
   width: 100%;
   border-collapse: collapse;
   white-space: nowrap;
 `;
-
 const Th = styled.th`
   text-align: left;
   padding: 16px 24px;
@@ -175,7 +160,6 @@ const Th = styled.th`
   background-color: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 `;
-
 const Td = styled.td`
   padding: 16px 24px;
   font-size: 0.95rem;
@@ -185,11 +169,9 @@ const Td = styled.td`
   &.mono { font-family: monospace; font-weight: 600; }
   &.right { text-align: right; }
 `;
-
 const Tr = styled.tr`
   &:hover { background-color: #f9fafb; }
 `;
-
 const TableActionButton = styled.button`
   background: none;
   border: none;
@@ -210,21 +192,86 @@ const TableActionButton = styled.button`
     &:hover { background-color: #fef2f2; }
   }
 `;
-
 const EmptyState = styled.p`
   text-align: center;
   color: #9ca3af;
   padding: 48px;
   font-size: 1rem;
 `;
-// --- END STYLES ---
 
+// SectionTitle (merged)
+const SectionTitle = styled.h2`
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111827;
+  margin-top: 0;
+  margin-bottom: 16px;
+`;
+
+// Modal styles (from section 2)
+const fadeIn = keyframes`from { opacity: 0; } to { opacity: 1; }`;
+const ModalBackdrop = styled.div`
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 1000; animation: ${fadeIn} 0.2s ease-out;
+`;
+const ModalContent = styled.div`
+  background-color: white; padding: 24px; border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  width: 100%; max-width: 600px;
+  max-height: 80vh; overflow-y: auto;
+`;
+const ModalHeader = styled.div`
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;
+`;
+const ModalTitle = styled.h2` font-size: 1.25rem; font-weight: 600; color: #111827; margin: 0; `;
+const CloseButton = styled.button`
+  background: #f1f5f9; border: none; border-radius: 50%; width: 32px; height: 32px;
+  font-size: 1.2rem; cursor: pointer; &:hover { background: #e2e8f0; }
+`;
+const LogList = styled.ul` list-style: none; padding: 0; margin: 0; `;
+const ModalLogItem = styled.li`
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 0; border-bottom: 1px solid #f1f5f9;
+`;
+const ModalLogDetails = styled.div` display: flex; flex-direction: column; `;
+const ModalLogTitle = styled.span` font-size: 1rem; font-weight: 600; color: #1e293b; text-transform: capitalize; `;
+const ModalLogSubtitle = styled.span` font-size: 0.875rem; color: #64748b; `;
+const ModalLogAmount = styled.span`
+  font-size: 1.1rem; font-weight: 700;
+  color: ${props => props.type === 'in' ? '#16a34a' : '#dc2626'};
+`;
+
+// -----------------------------
+// Helpers
+// -----------------------------
 const formatCurrency = (val) => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0
   }).format(val || 0);
 };
 
+const formatDateTime = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+const getLogTitle = (log) => {
+  if (!log) return '';
+  if (log.type === 'PURCHASE') return `Paid ${log.stall_name || ''}`;
+  if (log.type === 'TOPUP') return 'Wallet Top-up';
+  if (log.type === 'REFUND') return 'Wallet Refund';
+  return (log.type || '').toLowerCase();
+};
+const getLogAmount = (log) => {
+  const amount = parseFloat(log.amount || log.refunded_amount || log.total_amount || 0);
+  // For TOPUP we treat as positive; for PURCHASE/REFUND treat as out (negative)
+  if (log.type === 'TOPUP') return `+${amount.toFixed(0)}`;
+  return `-${amount.toFixed(0)}`;
+};
+
+// -----------------------------
+// Component
+// -----------------------------
 export default function EventDetailPage() {
   const { id: eventId } = useParams();
   const [event, setEvent] = useState(null);
@@ -236,13 +283,17 @@ export default function EventDetailPage() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
 
-  // 2. This is the new, safe data-fetching function
+  // Modal state for member history
+  const [modalData, setModalData] = useState(null); // { wallet, logs }
+  const [modalLoading, setModalLoading] = useState(false);
+
+  // Fetch all data: critical + non-critical
   const fetchEventData = async () => {
-    setLoading(true); 
-    setError(null); 
+    setLoading(true);
+    setError(null);
+    let isAuthError = false;
 
     try {
-      // 3. Fetch all CRITICAL data in parallel
       const [eventRes, finRes] = await Promise.all([
         adminAxios.get(`/events/${eventId}`),
         adminAxios.get(`/events/${eventId}/financial-summary`)
@@ -250,52 +301,59 @@ export default function EventDetailPage() {
 
       setEvent(eventRes.data);
       setFinancials(finRes.data);
-      
-      // 4. Fetch non-critical data
+
+      // Non-critical: stalls, cashiers, member logs (separate try/catch each)
       try {
         const stallsRes = await adminAxios.get(`/events/${eventId}/stalls`);
         setStalls(stallsRes.data);
       } catch (err) {
-        console.warn("Could not load stalls:", err);
+        if (err.response?.status === 401) isAuthError = true;
+        else console.warn("Could not load stalls:", err);
       }
-      
+
       try {
         const cashiersRes = await adminAxios.get(`/events/${eventId}/cashiers`);
         setCashiers(cashiersRes.data);
       } catch (err) {
-        console.warn("Could not load cashiers:", err);
+        if (err.response?.status === 401) isAuthError = true;
+        else console.warn("Could not load cashiers:", err);
       }
 
       try {
         const memberLogsRes = await adminAxios.get(`/events/${eventId}/member-refund-logs`);
         setMemberLogs(memberLogsRes.data);
       } catch (err) {
-        console.warn("Could not load member logs:", err);
+        if (err.response?.status === 401) isAuthError = true;
+        else console.warn("Could not load member logs:", err);
       }
 
     } catch (err) {
-      // 5. If any *critical* fetch fails, set the main error state
-      // This will now only be hit for network errors, not auth errors
-      console.error("Error fetching critical dashboard data:", err);
-      setError("Failed to load event dashboard. Please refresh the page.");
+      if (err.response?.status === 401) {
+        isAuthError = true;
+      } else {
+        console.error("Error fetching critical dashboard data:", err);
+        setError("Failed to load event dashboard. Please refresh the page.");
+      }
     } finally {
-      // 6. Set loading to FALSE *after* all fetches are done.
-      setLoading(false);
+      if (!isAuthError) setLoading(false);
     }
   };
 
-  // 7. This simple useEffect is now correct
   useEffect(() => {
     fetchEventData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  // Delete handlers (unchanged logic)
   const handleDeleteCashier = async (cashierId) => {
     if (!window.confirm("Are you sure you want to delete this cashier?")) return;
     try {
       await adminAxios.delete(`/events/${eventId}/cashiers/${cashierId}`);
       setCashiers(prev => prev.filter(c => c.cashier_id !== cashierId));
     } catch (err) {
-      alert("Failed to delete cashier.");
+      if (err.response?.status !== 401) {
+        alert("Failed to delete cashier.");
+      }
     }
   };
 
@@ -308,31 +366,44 @@ export default function EventDetailPage() {
       const finRes = await adminAxios.get(`/events/${eventId}/financial-summary`);
       setFinancials(finRes.data);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to delete stall.");
+      if (err.response?.status !== 401) {
+        alert(err.response?.data?.error || "Failed to delete stall.");
+      }
     }
   };
 
-  // --- RENDER GUARDS ---
-  if (loading) return <p style={{padding: 32}}>Loading dashboard...</p>;
-  
-  if (error) return <p style={{color: 'red', padding: 32}}>{error}</p>;
-  
-  // This guard is still important for the *initial* load
-  if (!event || !financials) {
-    return <p style={{color: 'red', padding: 32}}>Failed to load essential event data. Please refresh.</p>;
-  }
+  // Member history modal handler (Option B behavior)
+  const handleViewMemberHistory = async (wallet) => {
+    // wallet here is the row from memberRefunds list (has wallet_id etc)
+    if (!wallet || !wallet.wallet_id) return;
+    setModalLoading(true);
+    setModalData({ wallet, logs: [] }); // show basic wallet info immediately
+    try {
+      const res = await adminAxios.get(`/events/${eventId}/member-log/${wallet.wallet_id}`);
+      // Expecting: { wallet, logs }
+      setModalData(res.data);
+    } catch (err) {
+      alert('Failed to load member history.');
+      setModalData(null);
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
-  // --- CRASH FIX: Apply defaults ---
+  // Render guards
+  if (loading) return <p style={{padding: 32}}>Loading dashboard...</p>;
+  if (error) return <p style={{color: 'red', padding: 32}}>{error}</p>;
+  if (!event || !financials) return <p style={{color: 'red', padding: 32}}>Failed to load essential event data. Please refresh.</p>;
+
+  // Safe defaults (prevent null crashes)
   const cash = financials.cash || { total_in: 0, total_out: 0 };
   const sales = financials.sales || { total_sales: 0, total_commission: 0, total_owed: 0 };
   const financialStalls = financials.stalls || [];
-  // --- END CRASH FIX ---
-
   const netCash = parseFloat(cash.total_in) - parseFloat(cash.total_out);
 
   return (
     <DashboardContainer>
-      {/* --- HEADER --- */}
+      {/* Header */}
       <HeaderSection>
         <div>
           <Link to="/" style={{color: '#6b7280', textDecoration: 'none', fontWeight: 500, fontSize: '0.9rem'}}>
@@ -352,7 +423,7 @@ export default function EventDetailPage() {
         </ActionButtons>
       </HeaderSection>
 
-      {/* --- TABBED CONTENT --- */}
+      {/* Tabs */}
       <TabContainer>
         <TabHeader>
           <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Financial Overview</TabButton>
@@ -361,7 +432,7 @@ export default function EventDetailPage() {
           <TabButton active={activeTab === 'memberLogs'} onClick={() => setActiveTab('memberLogs')}>Member Refund Logs</TabButton>
         </TabHeader>
 
-        {/* --- TAB 1: FINANCIAL OVERVIEW (Using safe variables) --- */}
+        {/* Overview */}
         {activeTab === 'overview' && (
           <TabContent>
             <StatsGrid>
@@ -386,6 +457,7 @@ export default function EventDetailPage() {
                 <StatSub>Payable after event</StatSub>
               </StatCard>
             </StatsGrid>
+
             <SectionTitle style={{fontSize: '1.25rem', marginTop: '32px', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px'}}>Stall Payouts Summary</SectionTitle>
             <TableWrapper>
               <Table>
@@ -422,7 +494,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* --- TAB 2: STALL MANAGEMENT (Uses `stalls` state) --- */}
+        {/* Stalls */}
         {activeTab === 'stalls' && (
           <TabContent>
             <TableWrapper>
@@ -461,7 +533,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* --- TAB 3: CASHIER STAFF (Uses `cashiers` state) --- */}
+        {/* Cashiers */}
         {activeTab === 'cashiers' && (
           <TabContent>
             <TableWrapper>
@@ -497,7 +569,7 @@ export default function EventDetailPage() {
           </TabContent>
         )}
 
-        {/* --- TAB 4: MEMBER REFUND LOGS (Uses `memberLogs` state) --- */}
+        {/* Member Refund Logs (with "View History" action) */}
         {activeTab === 'memberLogs' && (
           <TabContent>
             <TableWrapper>
@@ -509,19 +581,25 @@ export default function EventDetailPage() {
                     <Th>Phone</Th>
                     <Th>Refund Date</Th>
                     <Th className="right">Amount Refunded</Th>
+                    <Th className="right">Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {memberLogs.length === 0 ? (
-                    <tr><Td colSpan="5"><EmptyState>No member refunds have been processed yet.</EmptyState></Td></tr>
+                    <tr><Td colSpan="6"><EmptyState>No member refunds have been processed yet.</EmptyState></Td></tr>
                   ) : (
                     memberLogs.map(log => (
-                      <Tr key={log.wallet_id}>
+                      <Tr key={log.wallet_id + '-' + (log.refund_date || '')}>
                         <Td style={{fontWeight: 600}}>{log.visitor_name || 'N/A'}</Td>
                         <Td className="mono">{log.membership_id}</Td>
                         <Td className="mono">{log.visitor_phone}</Td>
-                        <Td>{new Date(log.refund_date).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Td>
+                        <Td>{formatDateTime(log.refund_date)}</Td>
                         <Td className="right mono" style={{color: '#dc2626', fontWeight: 600}}>{formatCurrency(log.refunded_amount)}</Td>
+                        <Td className="right">
+                          <TableActionButton className="view" onClick={() => handleViewMemberHistory(log)}>
+                            View History
+                          </TableActionButton>
+                        </Td>
                       </Tr>
                     ))
                   )}
@@ -532,6 +610,55 @@ export default function EventDetailPage() {
         )}
 
       </TabContainer>
+
+      {/* Member History Modal (Option B) */}
+      {modalData && (
+        <ModalBackdrop onClick={() => setModalData(null)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalHeader>
+              <ModalTitle>
+                History for {modalData.wallet?.visitor_name || modalData.wallet?.membership_id || 'Member'}
+              </ModalTitle>
+              <CloseButton onClick={() => setModalData(null)}>×</CloseButton>
+            </ModalHeader>
+
+            {modalLoading ? <p>Loading transactions...</p> : (
+              <div>
+                {/* Wallet summary (if provided) */}
+                {modalData.wallet && (
+                  <div style={{marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <div>
+                      <div style={{fontWeight: 700}}>{modalData.wallet.visitor_name || 'N/A'}</div>
+                      <div style={{color: '#6b7280'}}>{modalData.wallet.visitor_phone || ''} {modalData.wallet.membership_id ? `• ${modalData.wallet.membership_id}` : ''}</div>
+                    </div>
+                    {/* If wallet has balance info show it */}
+                    <div style={{textAlign: 'right'}}>
+                      {modalData.wallet.balance !== undefined && <div style={{fontWeight: 700}}>{formatCurrency(modalData.wallet.balance)}</div>}
+                      <div style={{color: '#9ca3af'}}>Wallet Balance</div>
+                    </div>
+                  </div>
+                )}
+
+                <LogList>
+                  {(!modalData.logs || modalData.logs.length === 0) && <p>No transactions found.</p>}
+                  {modalData.logs && modalData.logs.map(log => (
+                    <ModalLogItem key={log.id || log.order_id || `${log.type}-${log.created_at}`}>
+                      <ModalLogDetails>
+                        <ModalLogTitle>{getLogTitle(log)}</ModalLogTitle>
+                        <ModalLogSubtitle>{formatDateTime(log.created_at)}</ModalLogSubtitle>
+                      </ModalLogDetails>
+                      <ModalLogAmount type={log.type === 'TOPUP' ? 'in' : 'out'}>
+                        ₹{getLogAmount(log)}
+                      </ModalLogAmount>
+                    </ModalLogItem>
+                  ))}
+                </LogList>
+              </div>
+            )}
+          </ModalContent>
+        </ModalBackdrop>
+      )}
+
     </DashboardContainer>
   );
 }

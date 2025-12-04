@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-// --- CHANGE: Use admin adapter ---
 import { adminAxios } from '../utils/apiAdapters';
 
-// ... (Keep all styled components exactly the same) ...
+// ... (Styled components remain the same) ...
 const Section = styled.div` background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); `;
 const Form = styled.form` display: grid; grid-template-columns: 1fr 1fr; gap: 24px; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; `;
@@ -20,12 +19,13 @@ export default function StallManager({ eventId }) {
   const [stalls, setStalls] = useState([]);
   const [error, setError] = useState(null);
   const [stallName, setStallName] = useState('');
-  const [ownerEmail, setOwnerEmail] = useState('');
+  
+  // --- FIX: Changed from ownerEmail to ownerPhone ---
+  const [ownerPhone, setOwnerPhone] = useState('');
   const [commissionRate, setCommissionRate] = useState('0.20');
 
   const fetchStalls = async () => {
     try {
-      // --- CHANGE: Use adminAxios ---
       const response = await adminAxios.get(`/events/${eventId}/stalls`);
       setStalls(response.data);
     } catch (err) {
@@ -42,14 +42,16 @@ export default function StallManager({ eventId }) {
     e.preventDefault();
     setError(null);
     try {
-      // --- CHANGE: Use adminAxios ---
       const response = await adminAxios.post(`/events/${eventId}/stalls`, {
         stall_name: stallName,
-        owner_email: ownerEmail,
+        // --- FIX: Send owner_phone instead of owner_email ---
+        owner_phone: ownerPhone,
         commission_rate: parseFloat(commissionRate),
       });
       setStalls([...stalls, response.data]);
-      setStallName(''); setOwnerEmail(''); setCommissionRate('0.20');
+      
+      // --- FIX: Reset ownerPhone state ---
+      setStallName(''); setOwnerPhone(''); setCommissionRate('0.20');
     } catch (err) {
       console.error("Error adding stall:", err);
       setError(err.response?.data?.error || "Failed to add stall.");
@@ -65,10 +67,20 @@ export default function StallManager({ eventId }) {
           <Label htmlFor="stall_name">Stall Name</Label>
           <Input id="stall_name" type="text" value={stallName} onChange={(e) => setStallName(e.target.value)} placeholder="e.g., Gupta Chaat House" required />
         </InputGroup>
+        
+        {/* --- FIX: Changed email input to phone input --- */}
         <InputGroup>
-          <Label htmlFor="owner_email">Stall Owner Email</Label>
-          <Input id="owner_email" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} placeholder="owner@email.com" required />
+          <Label htmlFor="owner_phone">Stall Owner Phone</Label>
+          <Input 
+            id="owner_phone" 
+            type="tel" 
+            value={ownerPhone} 
+            onChange={(e) => setOwnerPhone(e.target.value)} 
+            placeholder="9876543210" 
+            required 
+          />
         </InputGroup>
+        
         <InputGroup>
           <Label htmlFor="commission_rate">Commission (e.g., 0.2 for 20%)</Label>
           <Input id="commission_rate" type="number" step="0.01" min="0" max="1" value={commissionRate} onChange={(e) => setCommissionRate(e.target.value)} required />
@@ -81,10 +93,12 @@ export default function StallManager({ eventId }) {
         {stalls.length === 0 ? <ListItem><p>No stalls have been added yet.</p></ListItem> : stalls.map((stall) => (
             <ListItem key={stall.stall_id}>
               <StallName>{stall.stall_name}</StallName>
-              <StallDetails>{stall.owner_email} | {(stall.commission_rate * 100).toFixed(0)}% Commission</StallDetails>
+              {/* --- FIX: Display owner_phone --- */}
+              <StallDetails>{stall.owner_phone} | {(stall.commission_rate * 100).toFixed(0)}% Commission</StallDetails>
             </ListItem>
           ))}
       </List>
     </Section>
   );
 }
+

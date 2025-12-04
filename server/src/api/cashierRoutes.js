@@ -37,12 +37,15 @@ router.post('/login', async (req, res) => {
 router.use(cashierAuthMiddleware);
 
 // --- HELPER FUNCTION to build the dynamic wallet query ---
+// --- THIS IS FIX #1 ---
 const getWalletQuery = (identifier, identifierType, eventId) => {
   const isPhone = identifierType === 'phone';
   const queryText = `
     SELECT wallet_id, current_balance, visitor_phone, visitor_name, membership_id
     FROM wallets 
-    WHERE event_id = $1 AND ${isPhone ? 'visitor_phone' : 'membership_id'} = $2 AND status = 'ACTIVE'
+    WHERE event_id = $1 
+      AND ${isPhone ? 'visitor_phone' : 'membership_id'} = $2 
+      AND (status = 'ACTIVE' OR status = 'ENDED') -- Find active AND already-refunded wallets
   `;
   return {
     text: queryText,
@@ -71,7 +74,7 @@ router.post('/check-balance', async (req, res) => {
 });
 
 // [PROTECTED] Top-Up
-// --- UPDATED to remove wallet creation/PIN generation ---
+// --- THIS IS FIX #2 ---
 router.post('/topup', async (req, res) => {
   const { identifier, identifierType, amount } = req.body;
   if (!identifier || !identifierType || !amount) {
@@ -82,19 +85,18 @@ router.post('/topup', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Find the wallet dynamically
+    // 1. Find the wallet dynamically (now finds ACTIVE or ENDED wallets)
     const query = getWalletQuery(identifier, identifierType, req.cashier.event_id);
-    // Add FOR UPDATE to lock the row
     const { rows: [existing] } = await client.query(query.text + ' FOR UPDATE', query.values);
 
-    // --- LOGIC CHANGE: Check if wallet exists ---
+    // This is line 92. It will no longer error for refunded users.
     if (!existing) {
       throw new Error('Wallet not found. Please ask the visitor to register first.');
     }
 
-    // 2. Wallet exists, so just update it
+    // 2. Wallet exists, so update balance AND set status back to 'ACTIVE'
     const update = await client.query(
-      `UPDATE wallets SET current_balance = current_balance + $1 WHERE wallet_id = $2 RETURNING current_balance, visitor_name`,
+      `UPDATE wallets SET current_balance = current_balance + $1, status = 'ACTIVE' WHERE wallet_id = $2 RETURNING current_balance, visitor_name`,
       [amount, existing.wallet_id]
     );
     
@@ -105,12 +107,10 @@ router.post('/topup', async (req, res) => {
     await client.query(`INSERT INTO cash_ledger (wallet_id, cashier_id, transaction_type, amount) VALUES ($1, $2, 'TOPUP', $3)`, [walletId, req.cashier.id, amount]);
     await client.query('COMMIT');
 
-    // --- LOGIC CHANGE: Removed `new_pin` from response ---
     res.json({ message: 'Top-up successful', new_balance: newBalance, name: visitor_name || 'Visitor' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error("Topup error:", err);
-    // Send specific 404 error back to frontend
     if (err.message.includes('Wallet not found')) {
       return res.status(404).json({ error: err.message });
     }
@@ -121,7 +121,7 @@ router.post('/topup', async (req, res) => {
 });
 
 // [PROTECTED] Refund
-// --- UPDATED to use dynamic identifier ---
+// This route is unchanged and remains correct.
 router.post('/refund', async (req, res) => {
   const { identifier, identifierType } = req.body;
   if (!identifier || !identifierType) {
@@ -132,10 +132,11 @@ router.post('/refund', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Find the wallet dynamically
+    // 1. Find the wallet dynamically (this *should* only find ACTIVE wallets)
     const query = getWalletQuery(identifier, identifierType, req.cashier.event_id);
     const { rows: [wallet] } = await client.query(query.text + ' FOR UPDATE', query.values);
 
+    // --- We only refund wallets with a balance ---
     if (!wallet || wallet.current_balance <= 0) {
       throw new Error('No active balance to refund');
     }
@@ -175,7 +176,7 @@ router.get('/log', async (req, res) => {
   }
 });
 
-// --- NEW ENDPOINT: Member Refund Log ---
+// [PROTECTED] Member Refund Log
 router.get('/member-logs', async (req, res) => {
   const { event_id } = req.cashier;
   try {
@@ -206,7 +207,7 @@ router.get('/member-logs', async (req, res) => {
   }
 });
 
-// --- NEW ENDPOINT: Member Transaction History ---
+// [PROTECTED] Member Transaction History
 router.get('/member-log/:wallet_id', async (req, res) => {
   const { wallet_id } = req.params;
   const { event_id } = req.cashier;

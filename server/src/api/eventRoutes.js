@@ -312,9 +312,9 @@ router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
       text: `
         SELECT
           s.stall_name, s.commission_rate,
-          SUM(t.total_amount) as total_sales,
-          SUM(t.organizer_share) as total_organizer_profit,
-          SUM(t.stall_share) as total_amount_owed
+          COALESCE(SUM(t.total_amount), 0) as total_sales,
+          COALESCE(SUM(t.organizer_share), 0) as total_organizer_profit,
+          COALESCE(SUM(t.stall_share), 0) as total_amount_owed
         FROM transactions t
         JOIN orders o ON t.order_id = o.order_id
         JOIN stalls s ON o.stall_id = s.stall_id
@@ -351,7 +351,7 @@ router.get('/:event_id/stalls/:stall_id/transactions', async (req, res) => {
 
 
 // GET /api/events/:id/financial-summary
-// --- UPDATED to be robust against new events with no transactions ---
+// --- THIS IS THE FIXED ROUTE ---
 router.get('/:id/financial-summary', async (req, res) => {
   const { id: event_id } = req.params;
   const organizer_id = req.organizer.id;
@@ -360,9 +360,10 @@ router.get('/:id/financial-summary', async (req, res) => {
     const eventCheck = await pool.query('SELECT event_id FROM events WHERE event_id = $1 AND organizer_id = $2', [event_id, organizer_id]);
     if (eventCheck.rows.length === 0) return res.status(404).json({ error: 'Event not found' });
 
-    // --- DEFAULTS for cash and sales ---
+    // --- FIX: Define default "placeholder" objects ---
     const defaultCash = { total_in: 0, total_out: 0 };
     const defaultSales = { total_sales: 0, total_commission: 0, total_owed: 0 };
+    // --- END OF FIX ---
 
     const cashQuery = pool.query({
       text: `
@@ -409,7 +410,7 @@ router.get('/:id/financial-summary', async (req, res) => {
     const [cashRes, salesRes, stallsRes] = await Promise.all([cashQuery, salesQuery, stallsQuery]);
 
     res.json({
-      // --- UPDATED: Provide default object if no rows are returned ---
+      // --- FIX: Use the defaults if no rows are returned ---
       cash: cashRes.rows[0] || defaultCash,
       sales: salesRes.rows[0] || defaultSales,
       stalls: stallsRes.rows
@@ -459,5 +460,50 @@ router.get('/:id/member-refund-logs', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch member logs' });
   }
 });
+
+
+// GET /api/events/:event_id/member-log/:wallet_id (Admin-facing)
+router.get('/:event_id/member-log/:wallet_id', async (req, res) => {
+  const { event_id, wallet_id } = req.params;
+  const organizer_id = req.organizer.id;
+
+  try {
+    // First, verify this wallet belongs to this event AND this event belongs to this organizer
+    const { rows: [wallet] } = await pool.query(
+      `SELECT w.wallet_id, w.visitor_name, w.membership_id 
+       FROM wallets w
+       JOIN events e ON w.event_id = e.event_id
+       WHERE w.wallet_id = $1 
+         AND e.event_id = $2 
+         AND e.organizer_id = $3`,
+      [wallet_id, event_id, organizer_id]
+    );
+
+    if (!wallet) {
+      return res.status(404).json({ error: 'Member wallet not found or unauthorized.' });
+    }
+
+    // Now, fetch all their transactions (identical logic to cashierRoutes)
+    const query = {
+      text: `
+        SELECT cl.cash_ledger_id as id, cl.transaction_type as type, cl.amount, cl.created_at, NULL as stall_name
+        FROM cash_ledger cl WHERE cl.wallet_id = $1
+        UNION ALL
+        SELECT o.order_id as id, 'PURCHASE' as type, o.total_amount as amount, o.created_at, s.stall_name
+        FROM orders o JOIN stalls s ON o.stall_id = s.stall_id WHERE o.wallet_id = $1
+        ORDER BY created_at DESC;
+      `,
+      values: [wallet_id]
+    };
+    const { rows: logs } = await pool.query(query);
+    
+    res.status(200).json({ wallet, logs });
+
+  } catch (err) {
+    console.error("Error fetching member transaction log:", err.message);
+    res.status(500).json({ error: 'Server error fetching member log' });
+  }
+});
+
 
 module.exports = router;

@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+// --- CHANGE: Import cashierAxios ---
 import { cashierAxios } from '../utils/apiAdapters';
 
 const CashierAuthContext = createContext();
@@ -13,22 +14,12 @@ export const CashierAuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // --- THIS INTERCEPTOR MUST BE ATTACHED UNCONDITIONALLY ---
-    const interceptor = cashierAxios.interceptors.response.use(
-      response => response,
-      error => {
-        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-           logout();
-        }
-        return Promise.reject(error);
-      }
-    );
-    // --- END OF FIX ---
-
     const storedToken = localStorage.getItem('cashier_token');
+    // --- NEW: Also load cashier data if we saved it (we will need this for url_slug later) ---
     const storedCashier = localStorage.getItem('cashier_data');
 
     if (storedToken) {
+      // --- CHANGE: Use cashierAxios ---
       cashierAxios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
       setToken(storedToken);
       if (storedCashier) {
@@ -38,16 +29,15 @@ export const CashierAuthProvider = ({ children }) => {
     } else {
       setLoading(false);
     }
-    
-    // Clean up interceptor on unmount
-    return () => cashierAxios.interceptors.response.eject(interceptor);
   }, []);
 
   const login = (cashierData, token) => {
     localStorage.setItem('cashier_token', token);
+    // --- NEW: Save cashier data too ---
     localStorage.setItem('cashier_data', JSON.stringify(cashierData));
     setToken(token);
     setCashier(cashierData);
+    // --- CHANGE: Use cashierAxios ---
     cashierAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   };
 
@@ -56,6 +46,7 @@ export const CashierAuthProvider = ({ children }) => {
     localStorage.removeItem('cashier_data');
     setToken(null);
     setCashier(null);
+    // --- CHANGE: Use cashierAxios ---
     delete cashierAxios.defaults.headers.common['Authorization'];
   };
 
